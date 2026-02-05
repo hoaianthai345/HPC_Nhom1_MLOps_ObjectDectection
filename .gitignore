@@ -205,3 +205,28 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# MLOps - Data
+data/
+data_*/
+kaggle_dataset/
+
+# MLOps - Models & weights
+model/
+models/
+*.pt
+*.pth
+*.onnx
+*.bin
+*.h5
+*.pkl
+*.joblib
+*.safetensors
+
+# Markdown (generated/docs, giữ README.md)
+*.md
+!README.md
+
+# Reports & monitoring artifacts
+reports/
+monitoring/
