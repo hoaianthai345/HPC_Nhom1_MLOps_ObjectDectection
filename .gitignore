@@ -230,3 +230,4 @@ models/
 # Reports & monitoring artifacts
 reports/
 monitoring/
+production/
