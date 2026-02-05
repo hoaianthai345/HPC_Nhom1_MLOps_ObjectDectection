@@ -208,7 +208,7 @@ __marimo__/
 
 # MLOps - Data
 data/
-data_*/
+data_final/
 kaggle_dataset/
 
 # MLOps - Models & weights
@@ -225,9 +225,6 @@ models/
 
 # Markdown (generated/docs, giữ README.md)
 *.md
-!README.md
-
 # Reports & monitoring artifacts
 reports/
-monitoring/
 production/
