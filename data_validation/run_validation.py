@@ -39,7 +39,7 @@ def main():
     # Data settings
     parser.add_argument("--data-dir", type=str, default="data_final",
                         help="Data directory")
-    parser.add_argument("--model", type=str, default="yolov8n.pt",
+    parser.add_argument("--model", type=str, default="yolo26n.pt",
                         help="YOLO model path for predictions")
     parser.add_argument("--output-dir", type=str, default="reports",
                         help="Output directory for reports")

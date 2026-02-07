@@ -95,7 +95,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="Generate YOLO predictions (filtered to dataset classes)")
-    parser.add_argument("--model", type=str, default="yolov8n.pt", help="Model path")
+    parser.add_argument("--model", type=str, default="yolo26n.pt", help="Model path")
     parser.add_argument("--data-dir", type=str, default="data_final", help="Data directory")
     parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
     parser.add_argument("--iou", type=float, default=0.45, help="IoU threshold")
