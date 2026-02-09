@@ -1,0 +1,32 @@
+training:
+  epochs: 1
+  imgsz: 640
+  batch: 16
+  device: 0
+  workers: 8
+  seed: 42
+  deterministic: true
+
+optimization:
+  optimizer: auto
+  lr0: 0.01
+  warmup_epochs: 3
+
+augmentation:
+  mosaic: 1.0
+  close_mosaic: 10
+
+logging:
+  project: runs/distillation
+  name: yolo26_distillation_e2e
+  save: true
+  save_period: 10
+  plots: true
+
+distillation:
+  logit_temperature: 3.0
+  dense_logit_weight: 0.25
+  sparse_logit_weight: 0.25
+  box_loss_weight: 0.5
+  box_objectness_threshold: 0.3
+

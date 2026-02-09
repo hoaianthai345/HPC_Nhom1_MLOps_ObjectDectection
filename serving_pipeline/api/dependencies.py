@@ -1,6 +1,3 @@
-"""
-Shared FastAPI dependencies for the API layer.
-"""
 from typing import Optional
 
 from fastapi import HTTPException

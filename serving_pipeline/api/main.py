@@ -22,7 +22,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 # Prometheus Gauges for system resources
 PROCESS_RAM_MB = Gauge("service_ram_mb", "RAM used by FastAPI service in MB")
 GPU_MEMORY_MB = Gauge(
@@ -30,13 +29,19 @@ GPU_MEMORY_MB = Gauge(
     "GPU memory used in MB",
     ["gpu_index"],
 )
+# Data drift score (ImagePropertyDrift), updated when /drift/data runs
+DATA_DRIFT_SCORE = Gauge(
+    "data_drift_score",
+    "Data drift score from Deepchecks ImagePropertyDrift",
+    ["check"],
+)
 
-try:  # optional GPU metrics
-    import pynvml  # type: ignore
+try:  
+    import pynvml  
 
     pynvml.nvmlInit()
     _HAS_GPU = True
-except Exception:  # pragma: no cover - runs even without GPU
+except Exception:  
     _HAS_GPU = False
 
 

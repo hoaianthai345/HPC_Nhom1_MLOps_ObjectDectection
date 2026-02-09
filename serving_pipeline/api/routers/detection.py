@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, File, UploadFile, HTTPException, Query, Depends
-from fastapi.responses import StreamingResponse
 from PIL import Image
 
 from ...config import settings
@@ -139,64 +138,6 @@ async def detect_objects(
         raise
     except Exception as e:
         logger.error(f"[{request_id}] Detection failed: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Detection failed: {str(e)}",
-        )
-
-
-@router.post(
-    "/detect/annotated",
-    responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
-)
-async def detect_and_draw(
-    file: UploadFile = File(..., description="Image file to analyze"),
-    confidence_threshold: Optional[float] = Query(
-        default=None, ge=0.0, le=1.0, description="Confidence threshold for detections"
-    ),
-    iou_threshold: Optional[float] = Query(
-        default=None, ge=0.0, le=1.0, description="IoU threshold for NMS"
-    ),
-    det: YOLODetector = Depends(deps.get_detector),
-    val: ImageValidator = Depends(deps.get_validator),
-):
-    """
-    Detect objects and return annotated image with bounding boxes drawn.
-    """
-    request_id = str(uuid.uuid4())[:8]
-    logger.info(f"[{request_id}] Processing annotated detection request: {file.filename}")
-
-    try:
-        # Validate image
-        image_bytes, width, height, img_format = await val.validate_upload_file(file)
-
-        # Run detection and get annotated image
-        result, annotated_image = det.predict_and_draw(
-            image_bytes,
-            confidence_threshold=confidence_threshold,
-            iou_threshold=iou_threshold,
-        )
-        logger.info(f"[{request_id}] Detection complete: {result.num_detections} objects")
-
-        # Convert to bytes
-        img_byte_arr = io.BytesIO()
-        annotated_image.save(img_byte_arr, format="JPEG", quality=95)
-        img_byte_arr.seek(0)
-
-        return StreamingResponse(
-            img_byte_arr,
-            media_type="image/jpeg",
-            headers={
-                "X-Request-ID": request_id,
-                "X-Num-Detections": str(result.num_detections),
-                "X-Inference-Time-Ms": str(round(result.inference_time * 1000, 2)),
-            },
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[{request_id}] Annotated detection failed: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Detection failed: {str(e)}",

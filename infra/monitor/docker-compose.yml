@@ -29,6 +29,8 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     logging:
       driver: loki
       options:
@@ -41,7 +43,7 @@ services:
     container_name: aivn-grafana
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3250:3000"
     depends_on:
       - prometheus
     healthcheck:
@@ -56,6 +58,8 @@ services:
       options:
         loki-url: "http://localhost:3100/loki/api/v1/push"
     environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_INSTALL_PLUGINS=https://storage.googleapis.com/integration-artifacts/grafana-lokiexplore-app/grafana-lokiexplore-app-latest.zip;grafana-lokiexplore-app
     networks:
       - aio-network

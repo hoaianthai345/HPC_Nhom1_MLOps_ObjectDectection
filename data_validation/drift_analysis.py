@@ -1,6 +1,4 @@
 """
-Phase 1: Data Drift Analysis using Deepchecks.
-
 Analyzes drift between train and validation/test datasets:
 - Image Property Drift (brightness, contrast, blurriness)
 - Label Drift (class distribution)
@@ -15,6 +13,8 @@ from torch.utils.data import DataLoader
 from deepchecks.vision import VisionData, Suite
 from deepchecks.vision.suites import data_integrity
 from deepchecks.vision.checks import ImagePropertyDrift, LabelDrift
+from deepchecks.core.check_result import CheckResult
+from deepchecks.core.suite import SuiteResult
 
 try:
     from .dataset_loader import load_data_for_deepchecks
@@ -77,6 +77,58 @@ def create_vision_data(
     )
 
 
+# Property names (sau khi .lower()) từ Deepchecks Image Property Drift để đẩy lên Prometheus
+DRIFT_PROPERTIES = (
+    "brightness",
+    "contrast",
+    "rms contrast",
+    "mean red relative intensity",
+    "mean green relative intensity",
+    "mean blue relative intensity",
+)
+
+
+def extract_drift_metrics(suite_result: SuiteResult) -> Dict[str, float]:
+    """
+    Trích drift score từ kết quả Deepchecks Suite (check "Image Property Drift").
+    Chỉ trả về score của từng property: brightness và contrast.
+
+    value từ check có dạng: { "property_name": {"Drift score": float, "Method": str}, ... }
+    Property name trong Deepchecks thường viết hoa chữ đầu (Brightness, Contrast),
+    hàm chuẩn hóa về lowercase (brightness, contrast) để làm key.
+
+    Returns:
+        Dict với key "brightness", "contrast" (nếu có trong result), value là float [0, 1].
+    """
+    metrics: Dict[str, float] = {}
+    for check_result in suite_result.results:
+        if not isinstance(check_result, CheckResult):
+            continue
+        header = (getattr(check_result, "header", None) or "").strip()
+        value = getattr(check_result, "value", None)
+
+        print("[drift_metrics] check header:", repr(header))
+        if isinstance(value, dict) and header == "Image Property Drift":
+            print("[drift_metrics] Image Property Drift - property names:", list(value.keys()))
+            for pname, pdata in value.items():
+                if isinstance(pdata, dict):
+                    print("[drift_metrics]   ", repr(pname), "->", pdata)
+        if not isinstance(value, dict):
+            continue
+        if header != "Image Property Drift":
+            continue
+        for prop_name, prop_data in value.items():
+            if not isinstance(prop_data, dict):
+                continue
+            score = prop_data.get("Drift score")
+            if score is None:
+                continue
+            key = (prop_name or "").strip().lower()
+            if key in DRIFT_PROPERTIES:
+                metrics[key] = float(score)
+    return metrics
+
+
 def run_data_drift_analysis(
     data_dir: str,
     train_split: str = "train",
@@ -120,12 +172,20 @@ def run_data_drift_analysis(
     result.save_as_html(str(report_path), as_widget=False)
     
     passed = result.passed()
+    drift_metrics = extract_drift_metrics(result)
     print(f"Report saved to: {report_path}")
     print(f"Status: {'PASSED' if passed else 'FAILED'}")
+    if drift_metrics:
+        print(f"Drift scores: {drift_metrics}")
     if open_browser:
         _open_report_in_browser(report_path)
     
-    return {"passed": passed, "report_path": str(report_path), "result": result}
+    return {
+        "passed": passed,
+        "report_path": str(report_path),
+        "result": result,
+        "drift_metrics": drift_metrics,
+    }
 
 
 def run_data_integrity_check(

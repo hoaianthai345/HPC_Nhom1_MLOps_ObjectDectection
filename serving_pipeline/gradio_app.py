@@ -2,7 +2,7 @@ import io
 import logging
 import requests
 from typing import Optional, Tuple, Dict, Any
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import gradio as gr
 
 from .config import settings
@@ -54,80 +54,79 @@ def format_detections_text(result_dict: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def draw_boxes_on_image(image: Image.Image, result_dict: Dict[str, Any]) -> Image.Image:
+    """Vẽ bounding boxes lên ảnh gốc từ kết quả JSON /detect."""
+    img = image.copy().convert("RGB")
+    draw = ImageDraw.Draw(img)
+    detections = result_dict.get("detections", [])
+    if not detections:
+        return img
+
+    colors = [
+        "#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231",
+    ]
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14) # Load font in linux 
+    except (OSError, TypeError):
+        font = ImageFont.load_default() # other os use default font
+
+    for det in detections:
+        bbox = det["bbox"]
+        x1, y1 = int(bbox["x1"]), int(bbox["y1"])
+        x2, y2 = int(bbox["x2"]), int(bbox["y2"])
+        class_id = det.get("class_id", 0) % len(colors)
+        color = colors[class_id]
+        label = f"{det['class_name']} {det['confidence']:.2f}"
+        # Vẽ box + label
+        draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
+        draw.rectangle([x1, y1 - 20, x1 + 200, y1], fill=color)
+        draw.text((x1 + 2, y1 - 18), label, fill="white", font=font)
+
+    return img
+
+
 def call_api(
     image: Image.Image,
     confidence_threshold: float,
     iou_threshold: float
 ) -> Tuple[Optional[Image.Image], str]:
-    """
-    Call the FastAPI backend instead of direct inference.
-    """
+
     if image is None:
-        return None, "⚠️ Please upload an image"
-    
+        return None, "Please upload an image"
+
     try:
-        # Convert image to bytes
         img_byte_arr = io.BytesIO()
         image.save(img_byte_arr, format="JPEG", quality=95)
         img_byte_arr.seek(0)
-        
-        # Call API
+
         api_url = f"http://{settings.HOST}:{settings.API_PORT}"
-        
-        # Get annotated image
         response = requests.post(
-            f"{api_url}/detect/annotated",
-            files={"file": ("image.jpg", img_byte_arr, "image/jpeg")},
-            params={
-                "confidence_threshold": confidence_threshold,
-                "iou_threshold": iou_threshold
-            },
-            timeout=30
-        )
-        
-        if response.status_code != 200:
-            return None, f"❌ **API Error:** {response.text}"
-        
-        # Get the annotated image
-        annotated_image = Image.open(io.BytesIO(response.content))
-        
-        # Get detection results
-        img_byte_arr.seek(0)
-        json_response = requests.post(
             f"{api_url}/detect",
             files={"file": ("image.jpg", img_byte_arr, "image/jpeg")},
             params={
                 "confidence_threshold": confidence_threshold,
-                "iou_threshold": iou_threshold
+                "iou_threshold": iou_threshold,
             },
-            timeout=30
+            timeout=30,
         )
-        
-        if json_response.status_code == 200:
-            result_dict = json_response.json()
-            results_text = format_detections_text(result_dict)
-        else:
-            results_text = "Detection successful (see image)"
-        
+
+        if response.status_code != 200:
+            return None, f" **API Error:** {response.text}"
+
+        result_dict = response.json()
+        results_text = format_detections_text(result_dict)
+        annotated_image = draw_boxes_on_image(image, result_dict)
         return annotated_image, results_text
-        
+
     except requests.exceptions.ConnectionError:
-        return None, "❌ **Error:** Cannot connect to API. Make sure the FastAPI server is running."
+        return None, " **Error:** Cannot connect to API. Make sure the FastAPI server is running."
     except Exception as e:
         logger.error(f"API call error: {str(e)}")
-        return None, f"❌ **Error:** {str(e)}"
+        return None, f" **Error:** {str(e)}"
 
 
-def create_gradio_app(use_api: bool = True) -> gr.Blocks:
-    """
-    Create and return the Gradio interface.
-    
-    Args:
-        use_api: If True, calls FastAPI backend. If False, runs inference directly.
-        
-    Returns:
-        Gradio Blocks app
-    """
+def create_gradio_app() -> gr.Blocks:
+    """Tạo Gradio UI, luôn gọi FastAPI backend (/detect)."""
     with gr.Blocks(
         title=settings.APP_NAME,
         theme=gr.themes.Soft()
@@ -203,12 +202,8 @@ def create_gradio_app(use_api: bool = True) -> gr.Blocks:
                 """
             )
         
-        # Set up event handler
-        # Always use FastAPI backend; Gradio chỉ là frontend
-        detect_fn = call_api
-        
         detect_btn.click(
-            fn=detect_fn,
+            fn=call_api,
             inputs=[input_image, confidence_slider, iou_slider],
             outputs=[output_image, results_text]
         )
@@ -216,9 +211,9 @@ def create_gradio_app(use_api: bool = True) -> gr.Blocks:
     return app
 
 
-def launch_standalone():
-    """Launch Gradio app as standalone (direct inference)."""
-    app = create_gradio_app(use_api=False)
+def launch():
+    """Chạy Gradio UI (frontend cho FastAPI)."""
+    app = create_gradio_app()
     app.launch(
         server_name=settings.HOST,
         server_port=settings.GRADIO_PORT,
@@ -227,40 +222,16 @@ def launch_standalone():
     )
 
 
-def launch_with_api():
-    """Launch Gradio app as frontend to FastAPI."""
-    app = create_gradio_app(use_api=True)
-    app.launch(
-        server_name=settings.HOST,
-        server_port=settings.GRADIO_PORT,
-        share=False,
-        show_error=True
-    )
-
-
-# Main entry point
 if __name__ == "__main__":
     import argparse
-    
     parser = argparse.ArgumentParser(description="Launch Gradio Object Detection UI")
-    parser.add_argument(
-        "--use-api",
-        action="store_true",
-        help="Use FastAPI backend instead of direct inference"
-    )
     parser.add_argument(
         "--port",
         type=int,
         default=settings.GRADIO_PORT,
         help="Port to run Gradio on"
     )
-    
     args = parser.parse_args()
-    
     if args.port != settings.GRADIO_PORT:
         settings.GRADIO_PORT = args.port
-    
-    if args.use_api:
-        launch_with_api()
-    else:
-        launch_standalone()
+    launch()
