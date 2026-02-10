@@ -15,8 +15,8 @@ def get_minio_client():
     Create and return a MinIO client using boto3 S3 client
     """
     endpoint_url = os.getenv("MINIO_ENDPOINT_URL", "http://localhost:9000")
-    access_key = os.getenv("AWS_ACCESS_KEY_ID", "minioadmin")
-    secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", "minioadmin")
+    access_key = os.getenv("AWS_ACCESS_KEY_ID", "minio_admin")
+    secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", "minio_password123")
     
     print(f"Connecting to MinIO at: {endpoint_url}")
     
@@ -32,16 +32,28 @@ def get_minio_client():
     return s3_client
 
 
-def delete_all_objects(s3_client, bucket_name):
+def delete_all_objects(s3_client, bucket_name, prefix=None):
     """
-    Delete all objects in a bucket
+    Delete all objects in a bucket or with a specific prefix (folder)
+    
+    Args:
+        s3_client: boto3 S3 client
+        bucket_name: Name of the bucket
+        prefix: Optional prefix/folder path (e.g., 'models/yolo/')
     """
     try:
-        print(f"Listing objects in bucket '{bucket_name}'...")
-        response = s3_client.list_objects_v2(Bucket=bucket_name)
+        target = f"folder '{prefix}' in bucket '{bucket_name}'" if prefix else f"bucket '{bucket_name}'"
+        print(f"Listing objects in {target}...")
+        
+        # List objects with optional prefix
+        list_params = {'Bucket': bucket_name}
+        if prefix:
+            list_params['Prefix'] = prefix
+        
+        response = s3_client.list_objects_v2(**list_params)
         
         if 'Contents' not in response:
-            print(f"✓ Bucket '{bucket_name}' is already empty")
+            print(f"✓ {target.capitalize()} is already empty or does not exist")
             return True
         
         objects_to_delete = [{'Key': obj['Key']} for obj in response['Contents']]
@@ -50,12 +62,15 @@ def delete_all_objects(s3_client, bucket_name):
         for obj in response['Contents']:
             print(f"  - Deleting {obj['Key']}")
         
-        s3_client.delete_objects(
-            Bucket=bucket_name,
-            Delete={'Objects': objects_to_delete}
-        )
+        # Delete in batches of 1000 (S3 limit)
+        for i in range(0, len(objects_to_delete), 1000):
+            batch = objects_to_delete[i:i+1000]
+            s3_client.delete_objects(
+                Bucket=bucket_name,
+                Delete={'Objects': batch}
+            )
         
-        print(f"✓ Successfully deleted all objects from bucket '{bucket_name}'")
+        print(f"✓ Successfully deleted all objects from {target}")
         return True
         
     except ClientError as e:
@@ -83,7 +98,15 @@ def delete_bucket(s3_client, bucket_name):
 
 def main():
     """
-    Main function to delete bucket and its contents
+    Main function to delete bucket/folder and its contents
+    
+    Usage:
+        python delete_bucket.py <bucket_name>                    # Delete entire bucket
+        python delete_bucket.py <bucket_name> <folder_path>      # Delete folder in bucket
+    
+    Examples:
+        python delete_bucket.py base-models                      # Delete entire bucket
+        python delete_bucket.py base-models models/yolo/         # Delete folder in bucket
     """
     # Load environment variables from .env file
     env_path = Path(__file__).parent / '.env'
@@ -91,20 +114,40 @@ def main():
         load_dotenv(env_path)
         print(f"✓ Loaded environment variables from {env_path}")
     
-    # Get bucket name from environment or command line
+    # Parse command line arguments
+    bucket_name = None
+    folder_path = None
+    
     if len(sys.argv) > 1:
         bucket_name = sys.argv[1]
+        if len(sys.argv) > 2:
+            folder_path = sys.argv[2]
+            # Ensure folder path doesn't start with /
+            if folder_path.startswith('/'):
+                folder_path = folder_path[1:]
     else:
         bucket_name = os.getenv("MODEL_BUCKET", "base-models")
     
     print("=" * 60)
-    print("MinIO Bucket Deletion Script")
+    print("MinIO Bucket/Folder Deletion Script")
     print("=" * 60)
-    print(f"Bucket to delete: {bucket_name}")
+    print(f"Bucket: {bucket_name}")
+    if folder_path:
+        print(f"Folder: {folder_path}")
+        print("Action: Delete folder only")
+    else:
+        print("Action: Delete entire bucket")
     print("=" * 60)
     
     # Ask for confirmation
-    confirm = input(f"\n⚠️  Are you sure you want to delete bucket '{bucket_name}' and all its contents? (yes/no): ")
+    if folder_path:
+        target = f"folder '{folder_path}' in bucket '{bucket_name}'"
+        action = "delete this folder"
+    else:
+        target = f"bucket '{bucket_name}' and all its contents"
+        action = "delete this entire bucket"
+    
+    confirm = input(f"\n⚠️  Are you sure you want to {action}? (yes/no): ")
     if confirm.lower() not in ['yes', 'y']:
         print("Deletion cancelled.")
         sys.exit(0)
@@ -113,17 +156,25 @@ def main():
         # Create MinIO client
         s3_client = get_minio_client()
         
-        # Delete all objects in the bucket
-        if not delete_all_objects(s3_client, bucket_name):
-            sys.exit(1)
-        
-        # Delete the bucket itself
-        if not delete_bucket(s3_client, bucket_name):
-            sys.exit(1)
-        
-        print("\n" + "=" * 60)
-        print("✓ Bucket deletion completed successfully!")
-        print("=" * 60)
+        if folder_path:
+            # Delete only objects with the specified prefix (folder)
+            if not delete_all_objects(s3_client, bucket_name, prefix=folder_path):
+                sys.exit(1)
+            print("\n" + "=" * 60)
+            print(f"✓ Folder '{folder_path}' deletion completed successfully!")
+            print("=" * 60)
+        else:
+            # Delete all objects in the bucket
+            if not delete_all_objects(s3_client, bucket_name):
+                sys.exit(1)
+            
+            # Delete the bucket itself
+            if not delete_bucket(s3_client, bucket_name):
+                sys.exit(1)
+            
+            print("\n" + "=" * 60)
+            print("✓ Bucket deletion completed successfully!")
+            print("=" * 60)
         
     except Exception as e:
         print(f"\n✗ Unexpected error: {e}")
