@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     MAX_IMAGE_HEIGHT: int = Field(default=4096, env="MAX_IMAGE_HEIGHT")
     
     # YOLO Model settings
-    YOLO_MODEL_PATH: str = Field(default="yolov8n.pt", env="YOLO_MODEL_PATH")
+    YOLO_MODEL_PATH: str = Field(default="yolo26n.pt", env="YOLO_MODEL_PATH")
     YOLO_CONFIDENCE_THRESHOLD: float = Field(default=0.25, env="YOLO_CONFIDENCE_THRESHOLD")
     YOLO_IOU_THRESHOLD: float = Field(default=0.45, env="YOLO_IOU_THRESHOLD")
     YOLO_MAX_DETECTIONS: int = Field(default=100, env="YOLO_MAX_DETECTIONS")
@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     MINIO_ENDPOINT: str = Field(default="http://localhost:9000", env="MINIO_ENDPOINT")
     MINIO_PRODUCTION_BUCKET: str = Field(default="production-data", env="MINIO_PRODUCTION_BUCKET")
     USE_MINIO: bool = Field(default=False, env="USE_MINIO")  # Use MinIO or local storage
+    
+    # TensorRT settings
+    TENSORRT_ENABLED: bool = Field(default=False, env="TENSORRT_ENABLED")  # Enable TensorRT inference
+    TENSORRT_MODEL_NAME: str = Field(default="yolo-nano-model", env="TENSORRT_MODEL_NAME")  # Model name in MLflow
+    TENSORRT_BUCKET: str = Field(default="model-exports", env="TENSORRT_BUCKET")  # MinIO bucket for TensorRT engines
+    TENSORRT_USE_LATEST: bool = Field(default=True, env="TENSORRT_USE_LATEST")  # Use latest engine or specific version
+    TENSORRT_VERSION: str = Field(default="", env="TENSORRT_VERSION")  # Specific version to use (if not latest)
     
     model_config = {
         "env_file": str(Path(__file__).parent / ".env"),
