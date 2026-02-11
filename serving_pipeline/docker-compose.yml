@@ -19,7 +19,7 @@ services:
       - YOLO_IOU_THRESHOLD=0.45
       - YOLO_MAX_DETECTIONS=100
       - MLFLOW_TRACKING_URI=http://mlflow_server:5000
-      - MLFLOW_MODEL_URI=
+      - MLFLOW_MODEL_URI=models:/yolo-nano-model/production
       - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
       - AWS_ACCESS_KEY_ID=minio_admin
       - AWS_SECRET_ACCESS_KEY=minio_password123
