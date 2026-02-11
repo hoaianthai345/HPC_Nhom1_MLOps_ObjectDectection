@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# Tests
+tests/
+*.pytest_cache/
+.coverage
+htmlcov/
+
+# Data files (too large)
+production/images/*
+production/predictions/*
+!production/images/.gitkeep
+!production/predictions/.gitkeep
+
+# Model files (will be downloaded from MLflow)
+*.pt
+*.pth
+*.onnx
+*.weights
+
+# Logs
+*.log
+logs/
+*.out
+
+# Environment
+.env
+.env.local
+
+# Reports
+trash/
+reports/
+
+# Jupyter
+*.ipynb_checkpoints/
+
+# Docker
+docker-compose.override.yml

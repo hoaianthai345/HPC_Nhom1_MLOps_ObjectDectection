@@ -1,0 +1,77 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: serving_pipeline/docker/Dockerfile.backend
+    container_name: serving_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    networks:
+      - aio-network
+    environment:
+      - DEBUG=true
+      - HOST=0.0.0.0
+      - API_PORT=8000
+      - GRADIO_PORT=7860
+      - YOLO_MODEL_PATH=/app/yolo26n.pt
+      - YOLO_CONFIDENCE_THRESHOLD=0.25
+      - YOLO_IOU_THRESHOLD=0.45
+      - YOLO_MAX_DETECTIONS=100
+      - MLFLOW_TRACKING_URI=http://mlflow_server:5000
+      - MLFLOW_MODEL_URI=
+      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+      - AWS_ACCESS_KEY_ID=minio_admin
+      - AWS_SECRET_ACCESS_KEY=minio_password123
+      - AWS_DEFAULT_REGION=us-east-1
+      - PRODUCTION_DIR=/app/serving_pipeline/production
+    volumes:
+      # Mount source code for hot reload
+      - ..:/app:ro
+      - ./production:/app/serving_pipeline/production
+      # Mount local models as fallback
+      - ../yolo26n.pt:/app/yolo26n.pt:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Gradio UI Service
+  ui:
+    build:
+      context: ..
+      dockerfile: serving_pipeline/docker/Dockerfile.ui
+    container_name: serving_ui
+    restart: unless-stopped
+    ports:
+      - "7860:7860"
+    networks:
+      - aio-network
+    environment:
+      - DEBUG=true
+      - HOST=0.0.0.0
+      - API_PORT=8000
+      - GRADIO_PORT=7860
+      - API_HOST=api
+      - YOLO_MODEL_PATH=yolov8n.pt
+      - YOLO_CONFIDENCE_THRESHOLD=0.25
+      - YOLO_IOU_THRESHOLD=0.45
+      - MAX_FILE_SIZE_MB=10.0
+      - PRODUCTION_DIR=/tmp/production
+    volumes:
+      - ..:/app:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  aio-network:
+    external: true

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     HOST: str = Field(default="0.0.0.0", env="HOST")
     API_PORT: int = Field(default=8000, env="API_PORT")
     GRADIO_PORT: int = Field(default=7860, env="GRADIO_PORT")
+    API_HOST: str = Field(default="localhost", env="API_HOST")  # For Gradio to connect to API
     
     # Image validation settings
     ALLOWED_EXTENSIONS: List[str] = [".jpg", ".jpeg", ".png", ".bmp", ".webp"]
@@ -30,6 +31,13 @@ class Settings(BaseSettings):
     YOLO_CONFIDENCE_THRESHOLD: float = Field(default=0.25, env="YOLO_CONFIDENCE_THRESHOLD")
     YOLO_IOU_THRESHOLD: float = Field(default=0.45, env="YOLO_IOU_THRESHOLD")
     YOLO_MAX_DETECTIONS: int = Field(default=100, env="YOLO_MAX_DETECTIONS")
+    
+    # MLflow settings
+    MLFLOW_TRACKING_URI: str = Field(default="http://localhost:5000", env="MLFLOW_TRACKING_URI")
+    MLFLOW_MODEL_URI: str = Field(default="", env="MLFLOW_MODEL_URI")  # e.g., models:/yolo-student/Production
+    MLFLOW_S3_ENDPOINT_URL: str = Field(default="http://localhost:9000", env="MLFLOW_S3_ENDPOINT_URL")
+    AWS_ACCESS_KEY_ID: str = Field(default="minio_admin", env="AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY: str = Field(default="minio_password123", env="AWS_SECRET_ACCESS_KEY")
     
     # Folder to store production samples (images + YOLO txt predictions)
     PRODUCTION_DIR: Path = Field(

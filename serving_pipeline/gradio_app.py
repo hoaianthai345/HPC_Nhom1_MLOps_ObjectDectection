@@ -99,7 +99,7 @@ def call_api(
         image.save(img_byte_arr, format="JPEG", quality=95)
         img_byte_arr.seek(0)
 
-        api_url = f"http://{settings.HOST}:{settings.API_PORT}"
+        api_url = f"http://{settings.API_HOST}:{settings.API_PORT}"
         response = requests.post(
             f"{api_url}/detect",
             files={"file": ("image.jpg", img_byte_arr, "image/jpeg")},
