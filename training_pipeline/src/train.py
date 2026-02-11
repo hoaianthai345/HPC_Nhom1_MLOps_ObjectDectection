@@ -135,6 +135,46 @@ def main():
                 for f in save_dir.glob(ext):
                     mlflow.log_artifact(str(f), artifact_path="results")
 
+        # Register model to MLflow Model Registry with Staging stage
+        if save_dir and (save_dir / "weights" / "best.pt").exists():
+            print("\n📦 Registering model to MLflow Model Registry...")
+            
+            model_name = cfg.get("logging", {}).get("model_name", "yolo-student-model")
+            
+            # Log model using mlflow.pyfunc or ultralytics integration
+            model_uri = f"runs:/{run.info.run_id}/weights/best.pt"
+            
+            try:
+                # Register the model
+                model_version = mlflow.register_model(
+                    model_uri=model_uri,
+                    name=model_name,
+                    tags={
+                        "stage": "staging",
+                        "architecture": "yolo",
+                        "training_type": "knowledge_distillation",
+                        "teacher_model": teacher_weights,
+                    }
+                )
+                
+                print(f"✅ Model registered: {model_name}, version: {model_version.version}")
+                
+                # Transition to Staging stage
+                from mlflow.tracking import MlflowClient
+                client = MlflowClient()
+                client.transition_model_version_stage(
+                    name=model_name,
+                    version=model_version.version,
+                    stage="Staging",
+                    archive_existing_versions=False
+                )
+                
+                print(f"✅ Model transitioned to Staging stage")
+                
+            except Exception as e:
+                print(f"⚠️  Failed to register model: {e}")
+                print("Model artifacts are still logged, but not registered in Model Registry")
+
         print(f"\nMLflow run ID: {run.info.run_id}")
         print(f"MLflow experiment: {experiment_name}")
         print(f"View at: {mlflow.get_tracking_uri()}")
