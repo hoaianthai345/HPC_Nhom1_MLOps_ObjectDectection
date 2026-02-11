@@ -78,7 +78,6 @@ services:
     networks:
       - aio-network
 
-
   dcgm-exporter:
     image: nvcr.io/nvidia/k8s/dcgm-exporter:4.4.0-4.5.0-ubuntu22.04
     container_name: dcgm-exporter
@@ -96,6 +95,37 @@ services:
     networks:
       - aio-network
 
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: aivn-alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager-data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
+    networks:
+      - aio-network
+
+  pushgateway:
+    image: prom/pushgateway:latest
+    container_name: aivn-pushgateway
+    restart: unless-stopped
+    ports:
+      - "9091:9091"
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
+    networks:
+      - aio-network
 
 networks:
   aio-network:
@@ -103,3 +133,4 @@ networks:
 
 volumes:
   grafana-storage: {}
+  alertmanager-data: {}
