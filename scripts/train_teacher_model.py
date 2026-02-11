@@ -38,7 +38,7 @@ from ultralytics import YOLO
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description='Train YOLO teacher model (yolo11l)',
+        description='Train YOLO teacher model (yolo26l)',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     
@@ -54,8 +54,8 @@ def parse_args():
     parser.add_argument(
         '--model',
         type=str,
-        default='yolo26l.pt',
-        help='Model architecture (yolo26l.pt recommended for teacher)'
+        default='yolo26x.pt',
+        help='Model architecture (yolo26x.pt recommended for teacher)'
     )
     
     # Training hyperparameters
