@@ -6,8 +6,11 @@ Additionally, this script can verify that images are properly saved to the
 production-data bucket (MinIO or local filesystem) for later teacher model inference.
 
 Usage:
-    # Send test variant images for drift detection
+    # Send test variant images for drift detection (CPU)
     python scripts/send_drift_data.py --test-dir data/test_variants
+    
+    # Send to GPU endpoint for faster inference (auto-switches to port 8001)
+    python scripts/send_drift_data.py --test-dir data/test_variants --use-gpu
     
     # Send with MinIO verification
     python scripts/send_drift_data.py --test-dir data/test_variants --verify-minio
@@ -41,6 +44,7 @@ class DriftDataSender:
         confidence_threshold: float = 0.25,
         iou_threshold: float = 0.45,
         delay: float = 0.0,
+        use_gpu: bool = False,
         verify_minio: bool = False,
         minio_endpoint: Optional[str] = None,
         minio_access_key: Optional[str] = None,
@@ -54,13 +58,15 @@ class DriftDataSender:
             confidence_threshold: Confidence threshold for detections
             iou_threshold: IoU threshold for NMS
             delay: Delay between requests in seconds
+            use_gpu: Use GPU endpoint (/detect-gpu) instead of CPU (/detect)
             verify_minio: Whether to verify images are saved to MinIO
             minio_endpoint: MinIO endpoint URL
             minio_access_key: MinIO access key
             minio_secret_key: MinIO secret key
         """
         self.api_url = api_url.rstrip("/")
-        self.detect_endpoint = f"{self.api_url}/detect"
+        self.use_gpu = use_gpu
+        self.detect_endpoint = f"{self.api_url}/detect-gpu" if use_gpu else f"{self.api_url}/detect"
         self.confidence_threshold = confidence_threshold
         self.iou_threshold = iou_threshold
         self.delay = delay
@@ -342,6 +348,7 @@ class DriftDataSender:
         """
         logger.info(f"Starting drift data sender")
         logger.info(f"API URL: {self.api_url}")
+        logger.info(f"Endpoint: {self.detect_endpoint} {'(GPU)' if self.use_gpu else '(CPU)'}")
         logger.info(f"Test variants directory: {test_variants_dir}")
         
         # Check API health
@@ -526,8 +533,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Send test variant images
+  # Send test variant images to CPU endpoint
   python scripts/send_drift_data.py --test-dir data/test_variants
+  
+  # Send to GPU endpoint for faster inference (auto-switches to port 8001)
+  python scripts/send_drift_data.py --test-dir data/test_variants --use-gpu
   
   # Send with MinIO verification
   python scripts/send_drift_data.py --test-dir data/test_variants --verify-minio
@@ -558,7 +568,12 @@ Examples:
         "--api-url",
         type=str,
         default="http://localhost:8000",
-        help="Base URL of the serving API (default: http://localhost:8000)",
+        help="Base URL of the serving API (default: http://localhost:8000 for CPU, http://localhost:8001 for GPU)",
+    )
+    parser.add_argument(
+        "--use-gpu",
+        action="store_true",
+        help="Use GPU endpoint (/detect-gpu) for faster inference. Requires GPU-enabled API service.",
     )
     parser.add_argument(
         "--variants",
@@ -640,6 +655,11 @@ Examples:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
+    # Auto-adjust API URL for GPU if not explicitly set
+    if args.use_gpu and args.api_url == "http://localhost:8000":
+        args.api_url = "http://localhost:8001"
+        logger.info(f"🚀 GPU mode enabled, using GPU API at {args.api_url}")
+    
     # Check bucket mode
     if args.check_bucket:
         check_production_bucket(
@@ -656,6 +676,7 @@ Examples:
         confidence_threshold=args.confidence,
         iou_threshold=args.iou,
         delay=args.delay,
+        use_gpu=args.use_gpu,
         verify_minio=args.verify_minio,
         minio_endpoint=args.minio_endpoint,
         minio_access_key=args.minio_access_key,
