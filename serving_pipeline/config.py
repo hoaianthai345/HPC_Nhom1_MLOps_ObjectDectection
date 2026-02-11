@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     YOLO_CONFIDENCE_THRESHOLD: float = Field(default=0.25, env="YOLO_CONFIDENCE_THRESHOLD")
     YOLO_IOU_THRESHOLD: float = Field(default=0.45, env="YOLO_IOU_THRESHOLD")
     YOLO_MAX_DETECTIONS: int = Field(default=100, env="YOLO_MAX_DETECTIONS")
+    DEVICE: str = Field(default="cpu", env="DEVICE")  # Device for inference: 'cpu' or 'cuda'
     
     # MLflow settings
     MLFLOW_TRACKING_URI: str = Field(default="http://localhost:5000", env="MLFLOW_TRACKING_URI")
@@ -41,9 +42,20 @@ class Settings(BaseSettings):
     
     # Folder to store production samples (images + YOLO txt predictions)
     PRODUCTION_DIR: Path = Field(
-        default=Path(__file__).parent / "production",
+        default=Path("/data/production"),
         env="PRODUCTION_DIR",
     )
+    
+    # Folder to store user request images organized by date for teacher model inference
+    PRODUCTION_DATA_DIR: Path = Field(
+        default=Path("/data/production-data"),
+        env="PRODUCTION_DATA_DIR",
+    )
+    
+    # MinIO settings for production data storage
+    MINIO_ENDPOINT: str = Field(default="http://localhost:9000", env="MINIO_ENDPOINT")
+    MINIO_PRODUCTION_BUCKET: str = Field(default="production-data", env="MINIO_PRODUCTION_BUCKET")
+    USE_MINIO: bool = Field(default=False, env="USE_MINIO")  # Use MinIO or local storage
     
     model_config = {
         "env_file": str(Path(__file__).parent / ".env"),
@@ -53,9 +65,29 @@ class Settings(BaseSettings):
     
     def setup_directories(self):
         """Create necessary directories if they don't exist."""
-        self.PRODUCTION_DIR.mkdir(parents=True, exist_ok=True)
-        (self.PRODUCTION_DIR / "images").mkdir(parents=True, exist_ok=True)
-        (self.PRODUCTION_DIR / "predictions").mkdir(parents=True, exist_ok=True)
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Try to create directories, but don't fail if read-only filesystem
+        directories = [
+            (self.PRODUCTION_DIR, "production directory"),
+            (self.PRODUCTION_DIR / "images", "production images directory"),
+            (self.PRODUCTION_DIR / "predictions", "production predictions directory"),
+        ]
+        
+        # Only create PRODUCTION_DATA_DIR if not using MinIO
+        if not self.USE_MINIO:
+            directories.append((self.PRODUCTION_DATA_DIR, "production data directory"))
+        
+        for directory, desc in directories:
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+                logger.debug(f"✓ Created {desc}: {directory}")
+            except (OSError, PermissionError) as e:
+                logger.warning(
+                    f"Could not create {desc} at {directory}: {e}. "
+                    "This is normal if using read-only filesystem or MinIO storage."
+                )
 
 
 # Global settings instance

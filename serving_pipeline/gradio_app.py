@@ -88,7 +88,8 @@ def draw_boxes_on_image(image: Image.Image, result_dict: Dict[str, Any]) -> Imag
 def call_api(
     image: Image.Image,
     confidence_threshold: float,
-    iou_threshold: float
+    iou_threshold: float,
+    use_gpu: bool = False
 ) -> Tuple[Optional[Image.Image], str]:
 
     if image is None:
@@ -100,8 +101,10 @@ def call_api(
         img_byte_arr.seek(0)
 
         api_url = f"http://{settings.API_HOST}:{settings.API_PORT}"
+        endpoint = "/detect-gpu" if use_gpu else "/detect"
+        
         response = requests.post(
-            f"{api_url}/detect",
+            f"{api_url}{endpoint}",
             files={"file": ("image.jpg", img_byte_arr, "image/jpeg")},
             params={
                 "confidence_threshold": confidence_threshold,
@@ -151,6 +154,13 @@ def create_gradio_app() -> gr.Blocks:
                 )
                 
                 with gr.Accordion("⚙️ Settings", open=True):
+                    device_radio = gr.Radio(
+                        choices=[("🖥️ CPU (Standard)", False), ("🚀 GPU (Fast)", True)],
+                        value=False,
+                        label="Inference Device",
+                        info="GPU requires CUDA-enabled service on port 8001"
+                    )
+                    
                     confidence_slider = gr.Slider(
                         minimum=0.0,
                         maximum=1.0,
@@ -198,13 +208,15 @@ def create_gradio_app() -> gr.Blocks:
                 - **Allowed Formats:** {', '.join(settings.ALLOWED_EXTENSIONS)}
                 
                 ### API Endpoints
+                - **CPU Endpoint:** [http://localhost:{settings.API_PORT}/detect](http://localhost:{settings.API_PORT}/detect)
+                - **GPU Endpoint:** [http://localhost:{settings.API_PORT}/detect-gpu](http://localhost:{settings.API_PORT}/detect-gpu)
                 - **Swagger UI:** [http://localhost:{settings.API_PORT}/docs](http://localhost:{settings.API_PORT}/docs)
                 """
             )
         
         detect_btn.click(
             fn=call_api,
-            inputs=[input_image, confidence_slider, iou_slider],
+            inputs=[input_image, confidence_slider, iou_slider, device_radio],
             outputs=[output_image, results_text]
         )
     
