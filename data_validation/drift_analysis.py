@@ -6,6 +6,7 @@ Analyzes drift between train and validation/test datasets:
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+import webbrowser
 
 import numpy as np
 from torch.utils.data import DataLoader
@@ -90,15 +91,18 @@ DRIFT_PROPERTIES = (
 
 def extract_drift_metrics(suite_result: SuiteResult) -> Dict[str, float]:
     """
-    Trích drift score từ kết quả Deepchecks Suite (check "Image Property Drift").
-    Chỉ trả về score của từng property: brightness và contrast.
+    Extract the drift score from the Deepchecks Suite result (check "Image Property Drift").
 
-    value từ check có dạng: { "property_name": {"Drift score": float, "Method": str}, ... }
-    Property name trong Deepchecks thường viết hoa chữ đầu (Brightness, Contrast),
-    hàm chuẩn hóa về lowercase (brightness, contrast) để làm key.
+    Returns only the score for each property: brightness and contrast.
+
+    The value from the check is in the form: { "property_name": {"Drift score": float, "Method": str}, ... }
+    Property names in Deepchecks usually have the first letter capitalized (Brightness, Contrast),
+
+    normalization function to lowercase (brightness, contrast) to use as the key.
 
     Returns:
-        Dict với key "brightness", "contrast" (nếu có trong result), value là float [0, 1].
+
+    Dict with key "brightness", "contrast" (if present in result), value is float [0, 1].
     """
     metrics: Dict[str, float] = {}
     for check_result in suite_result.results:
@@ -224,6 +228,101 @@ def run_data_integrity_check(
         _open_report_in_browser(report_path)
     
     return {"passed": passed, "report_path": str(report_path), "result": result}
+
+
+def run_prediction_drift_analysis(
+    data_dir: str,
+    student_predictions_dir: str,
+    teacher_predictions_dir: str,
+    output_dir: str = "reports",
+    batch_size: int = 32,
+    img_size: int = 640,
+    class_names: Optional[List[str]] = None,
+    max_samples: Optional[int] = None,
+    open_browser: bool = False
+) -> Dict[str, Any]:
+    """Run Prediction Drift analysis between student and teacher predictions."""
+    print(f"Prediction Drift Analysis: Student vs Teacher")
+    
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    class_names = class_names or DEFAULT_CLASSES
+    
+    print(f"Loading student predictions...")
+    from dataset_loader import YOLODataset, collate_fn
+    from torch.utils.data import DataLoader
+    import torch
+    
+    data_dir_path = Path(data_dir)
+    
+    # Load with student predictions
+    student_dataset = YOLODataset(
+        images_dir=str(data_dir_path / "images"),
+        labels_dir=str(data_dir_path / "labels") if (data_dir_path / "labels").exists() else str(data_dir_path / "images"),
+        predictions_dir=student_predictions_dir,
+        img_size=img_size,
+        class_names=class_names,
+        max_samples=max_samples
+    )
+    
+    # Load with teacher predictions
+    teacher_dataset = YOLODataset(
+        images_dir=str(data_dir_path / "images"),
+        labels_dir=str(data_dir_path / "labels") if (data_dir_path / "labels").exists() else str(data_dir_path / "images"),
+        predictions_dir=teacher_predictions_dir,
+        img_size=img_size,
+        class_names=class_names,
+        max_samples=max_samples
+    )
+    
+    use_pin_memory = torch.cuda.is_available()
+    student_loader = DataLoader(
+        student_dataset, batch_size=batch_size, shuffle=False,
+        num_workers=4, collate_fn=collate_fn, pin_memory=use_pin_memory
+    )
+    teacher_loader = DataLoader(
+        teacher_dataset, batch_size=batch_size, shuffle=False,
+        num_workers=4, collate_fn=collate_fn, pin_memory=use_pin_memory
+    )
+    
+    student_data = YOLOVisionData(
+        data_loader=student_loader,
+        label_map={i: name for i, name in enumerate(class_names)},
+        task_type='object_detection'
+    )
+    
+    teacher_data = YOLOVisionData(
+        data_loader=teacher_loader,
+        label_map={i: name for i, name in enumerate(class_names)},
+        task_type='object_detection'
+    )
+    
+    print("Running Prediction Drift checks...")
+    from deepchecks.vision.checks import PredictionDrift
+    
+    prediction_drift_suite = Suite(
+        "Prediction Drift Suite",
+        PredictionDrift().add_condition_drift_score_less_than(0.15),
+    )
+    
+    result = prediction_drift_suite.run(train_dataset=teacher_data, test_dataset=student_data)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = output_dir / f"prediction_drift_report_{timestamp}.html"
+    result.save_as_html(str(report_path), as_widget=False)
+    
+    passed = result.passed()
+    print(f"Report saved to: {report_path}")
+    print(f"Status: {'PASSED' if passed else 'FAILED'}")
+    if open_browser:
+        _open_report_in_browser(report_path)
+    
+    return {
+        "passed": passed,
+        "report_path": str(report_path),
+        "result": result,
+    }
 
 
 if __name__ == "__main__":
