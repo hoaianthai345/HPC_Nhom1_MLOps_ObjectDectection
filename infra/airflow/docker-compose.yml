@@ -53,8 +53,7 @@ x-airflow-common:
   build: .
   environment:
     &airflow-common-env
-    # AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
@@ -204,6 +203,13 @@ services:
         condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   airflow-triggerer:
     <<: *airflow-common
