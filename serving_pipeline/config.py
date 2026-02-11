@@ -14,9 +14,13 @@ class Settings(BaseSettings):
     
     # Server settings
     HOST: str = Field(default="0.0.0.0", env="HOST")
-    API_PORT: int = Field(default=8000, env="API_PORT")
     GRADIO_PORT: int = Field(default=7860, env="GRADIO_PORT")
+    API_PORT: int = Field(default=8000, env="API_PORT")
     API_HOST: str = Field(default="localhost", env="API_HOST")  # For Gradio to connect to API
+    
+    # GPU Service settings (separate service)
+    GPU_API_HOST: str = Field(default="localhost", env="GPU_API_HOST")  # For Gradio to connect to GPU API
+    GPU_API_PORT: int = Field(default=8001, env="GPU_API_PORT")  # GPU service port
     
     # Image validation settings
     ALLOWED_EXTENSIONS: List[str] = [".jpg", ".jpeg", ".png", ".bmp", ".webp"]

@@ -112,7 +112,9 @@ services:
       - API_PORT=8000
       - GRADIO_PORT=7860
       - API_HOST=api
-      - YOLO_MODEL_PATH=yolov8n.pt
+      - GPU_API_HOST=api-gpu
+      - GPU_API_PORT=8000
+      - YOLO_MODEL_PATH=yolo26n.pt
       - YOLO_CONFIDENCE_THRESHOLD=0.25
       - YOLO_IOU_THRESHOLD=0.45
       - MAX_FILE_SIZE_MB=10.0
@@ -121,6 +123,8 @@ services:
       - ..:/app:ro
     depends_on:
       api:
+        condition: service_healthy
+      api-gpu:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7860"]

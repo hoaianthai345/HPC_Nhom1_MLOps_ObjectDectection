@@ -26,5 +26,15 @@ async def health_check():
     )
 
 
+@router.get("/gpu/available")
+async def check_gpu_availability():
+    """Check if GPU detector is available."""
+    return {
+        "gpu_available": deps.is_gpu_available(),
+        "message": "GPU detector is ready" if deps.is_gpu_available() 
+                   else "GPU not available. CUDA may not be installed or GPU not present."
+    }
+
+
 __all__ = ["router"]
 

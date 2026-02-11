@@ -100,8 +100,13 @@ def call_api(
         image.save(img_byte_arr, format="JPEG", quality=95)
         img_byte_arr.seek(0)
 
-        api_url = f"http://{settings.API_HOST}:{settings.API_PORT}"
-        endpoint = "/detect-gpu" if use_gpu else "/detect"
+        # Use GPU service on different port if GPU is selected, otherwise use CPU service
+        if use_gpu:
+            api_url = f"http://{settings.GPU_API_HOST}:{settings.GPU_API_PORT}"
+        else:
+            api_url = f"http://{settings.API_HOST}:{settings.API_PORT}"
+        
+        endpoint = "/detect"
         
         response = requests.post(
             f"{api_url}{endpoint}",
@@ -128,8 +133,27 @@ def call_api(
         return None, f" **Error:** {str(e)}"
 
 
+def check_gpu_available() -> bool:
+    """Check if GPU service is available (separate service on different port)."""
+    try:
+        gpu_api_url = f"http://{settings.GPU_API_HOST}:{settings.GPU_API_PORT}"
+        response = requests.get(f"{gpu_api_url}/health", timeout=5)
+        if response.status_code == 200:
+            return True
+    except requests.exceptions.RequestException:
+        logger.warning("GPU service not reachable at %s:%s", settings.GPU_API_HOST, settings.GPU_API_PORT)
+    return False
+
+
 def create_gradio_app() -> gr.Blocks:
     """Tạo Gradio UI, luôn gọi FastAPI backend (/detect)."""
+    # Check GPU availability at startup
+    gpu_available = check_gpu_available()
+    if gpu_available:
+        gpu_status_msg = f"🚀 GPU service is available on port {settings.GPU_API_PORT}"
+    else:
+        gpu_status_msg = f"⚠️ GPU service not available on port {settings.GPU_API_PORT} (CPU only mode)"
+    
     with gr.Blocks(
         title=settings.APP_NAME,
         theme=gr.themes.Soft()
@@ -140,6 +164,8 @@ def create_gradio_app() -> gr.Blocks:
             # 🔍 {settings.APP_NAME}
             
             Upload an image to detect objects using YOLO model.
+            
+            **Status:** {gpu_status_msg}
             """
         )
         
@@ -154,11 +180,19 @@ def create_gradio_app() -> gr.Blocks:
                 )
                 
                 with gr.Accordion("⚙️ Settings", open=True):
+                    # Only show GPU option if available
+                    if gpu_available:
+                        device_choices = [("🖥️ CPU (Standard)", False), ("🚀 GPU (Fast)", True)]
+                        device_info = "Select inference device"
+                    else:
+                        device_choices = [("🖥️ CPU (Standard)", False)]
+                        device_info = "GPU not available - using CPU only"
+                    
                     device_radio = gr.Radio(
-                        choices=[("🖥️ CPU (Standard)", False), ("🚀 GPU (Fast)", True)],
+                        choices=device_choices,
                         value=False,
                         label="Inference Device",
-                        info="GPU requires CUDA-enabled service on port 8001"
+                        info=device_info
                     )
                     
                     confidence_slider = gr.Slider(
@@ -208,9 +242,10 @@ def create_gradio_app() -> gr.Blocks:
                 - **Allowed Formats:** {', '.join(settings.ALLOWED_EXTENSIONS)}
                 
                 ### API Endpoints
-                - **CPU Endpoint:** [http://localhost:{settings.API_PORT}/detect](http://localhost:{settings.API_PORT}/detect)
-                - **GPU Endpoint:** [http://localhost:{settings.API_PORT}/detect-gpu](http://localhost:{settings.API_PORT}/detect-gpu)
-                - **Swagger UI:** [http://localhost:{settings.API_PORT}/docs](http://localhost:{settings.API_PORT}/docs)
+                - **CPU Service:** [http://localhost:{settings.API_PORT}/detect](http://localhost:{settings.API_PORT}/detect)
+                - **GPU Service:** [http://localhost:{settings.GPU_API_PORT}/detect](http://localhost:{settings.GPU_API_PORT}/detect)
+                - **CPU Swagger UI:** [http://localhost:{settings.API_PORT}/docs](http://localhost:{settings.API_PORT}/docs)
+                - **GPU Swagger UI:** [http://localhost:{settings.GPU_API_PORT}/docs](http://localhost:{settings.GPU_API_PORT}/docs)
                 """
             )
         
