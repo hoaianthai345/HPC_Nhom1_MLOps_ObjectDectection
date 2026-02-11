@@ -640,9 +640,9 @@ Examples:
     
     # Output settings
     parser.add_argument(
-        "--no-save",
+        "--save-results",
         action="store_true",
-        help="Don't save results to JSON file",
+        help="Save results to JSON file",
     )
     parser.add_argument(
         "--verbose",
@@ -689,7 +689,7 @@ Examples:
         test_variants_dir=test_variants_dir,
         variants=args.variants,
         max_images_per_variant=args.max_images,
-        save_results=not args.no_save,
+        save_results=args.save_results,
     )
 
 
