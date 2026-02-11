@@ -77,6 +77,27 @@ x-airflow-common:
     AIRFLOW__EXECUTION_API__JWT_EXPIRATION_TIME: '600'
     # The following line can be used to set a custom config file, stored in the local config folder
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+    
+    # MinIO Configuration
+    MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minio_admin}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minio_password123}
+    AWS_DEFAULT_REGION: 'us-east-1'
+    
+    # MLflow Configuration
+    MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow_server:5000}
+    MLFLOW_S3_ENDPOINT_URL: ${MINIO_ENDPOINT:-http://minio:9000}
+    
+    # Training Configuration
+    TRAIN_EPOCHS: ${TRAIN_EPOCHS:-10}
+    TRAIN_BATCH_SIZE: ${TRAIN_BATCH_SIZE:-16}
+    TRAIN_DEVICE: ${TRAIN_DEVICE:-0}
+    
+    # Model Promotion Thresholds
+    PROMOTION_MAP50_THRESHOLD: ${PROMOTION_MAP50_THRESHOLD:-0.5}
+    PROMOTION_MAP50_95_THRESHOLD: ${PROMOTION_MAP50_95_THRESHOLD:-0.3}
+    PROMOTION_PRECISION_THRESHOLD: ${PROMOTION_PRECISION_THRESHOLD:-0.4}
+    PROMOTION_RECALL_THRESHOLD: ${PROMOTION_RECALL_THRESHOLD:-0.4}
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs

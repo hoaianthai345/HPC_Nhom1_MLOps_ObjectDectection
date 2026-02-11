@@ -1,12 +1,21 @@
 """
-Airflow DAG for Model Training with MinIO Data Fetching.
+Airflow DAG for Model Training with MinIO Data Fetching and Auto-Promotion.
 
 This DAG orchestrates the complete training pipeline:
 1. Fetches training data from MinIO bucket
 2. Prepares data and configuration
 3. Trains YOLO model (yolo11n - nano model for efficiency)
 4. Logs model and metrics to MLflow
-5. Registers trained model to MLflow Model Registry
+5. Registers trained model to MLflow Model Registry (Staging)
+6. Evaluates model performance on validation set
+7. Automatically promotes to Production if metrics pass thresholds
+8. Sends notification with training and promotion results
+
+Performance Thresholds (configurable via .env):
+- PROMOTION_MAP50_THRESHOLD (default: 0.5)
+- PROMOTION_MAP50_95_THRESHOLD (default: 0.3)
+- PROMOTION_PRECISION_THRESHOLD (default: 0.4)
+- PROMOTION_RECALL_THRESHOLD (default: 0.4)
 
 Schedule: Manual trigger or cron-based
 
@@ -310,7 +319,7 @@ def prepare_training_config(**context):
     # Training configuration
     training_config = {
         'training': {
-            'epochs': int(os.getenv('TRAIN_EPOCHS', '50')),
+            'epochs': int(os.getenv('TRAIN_EPOCHS', '10')),
             'imgsz': 640,
             'batch': int(os.getenv('TRAIN_BATCH_SIZE', '16')),
             'device': os.getenv('TRAIN_DEVICE', '0'),
@@ -574,22 +583,227 @@ def upload_model_to_minio(**context):
         print(f"⚠️  Warning: Could not upload to MinIO: {e}")
 
 
+def evaluate_model_performance(**context):
+    """
+    Evaluate trained model performance on validation set.
+    """
+    import yaml
+    import os
+    from pathlib import Path
+    from ultralytics import YOLO
+    import mlflow
+    from mlflow.tracking import MlflowClient
+    
+    print("📊 Evaluating model performance...")
+    
+    # Get model info from previous task
+    model_name = context['task_instance'].xcom_pull(task_ids='train_model', key='model_name')
+    model_version = context['task_instance'].xcom_pull(task_ids='train_model', key='model_version')
+    run_id = context['task_instance'].xcom_pull(task_ids='train_model', key='run_id')
+    data_yaml = context['task_instance'].xcom_pull(task_ids='prepare_data_yaml', key='data_yaml')
+    
+    # MLflow configuration
+    MLFLOW_TRACKING_URI = os.getenv('MLFLOW_TRACKING_URI', 'http://mlflow_server:5000')
+    os.environ['MLFLOW_TRACKING_URI'] = MLFLOW_TRACKING_URI
+    os.environ['AWS_ACCESS_KEY_ID'] = os.getenv('AWS_ACCESS_KEY_ID', 'minio_admin')
+    os.environ['AWS_SECRET_ACCESS_KEY'] = os.getenv('AWS_SECRET_ACCESS_KEY', 'minio_password123')
+    os.environ['MLFLOW_S3_ENDPOINT_URL'] = os.getenv('MINIO_ENDPOINT', 'http://minio:9000')
+    os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+    
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    client = MlflowClient()
+    
+    # Download model from MLflow run artifacts (more reliable than registered model)
+    model_uri = f"runs:/{run_id}/weights/best.pt"
+    model_path = mlflow.artifacts.download_artifacts(artifact_uri=model_uri)
+    
+    print(f"📥 Downloaded model from: {model_uri}")
+    print(f"📂 Model saved to: {model_path}")
+    
+    # Load model
+    model = YOLO(model_path)
+    
+    print("🔍 Running validation...")
+    val_results = model.val(data=data_yaml, split='val', workers=0)
+    
+    # Extract metrics
+    metrics = {
+        'val_mAP50': float(val_results.box.map50),  # mAP@0.5
+        'val_mAP50_95': float(val_results.box.map),  # mAP@0.5:0.95
+        'val_precision': float(val_results.box.mp),  # mean precision
+        'val_recall': float(val_results.box.mr),  # mean recall
+    }
+    
+    print("\n📈 Validation Metrics:")
+    print(f"   mAP@0.5:    {metrics['val_mAP50']:.4f}")
+    print(f"   mAP@0.5:0.95: {metrics['val_mAP50_95']:.4f}")
+    print(f"   Precision:   {metrics['val_precision']:.4f}")
+    print(f"   Recall:      {metrics['val_recall']:.4f}")
+    
+    # Update MLflow run with validation metrics
+    with mlflow.start_run(run_id=run_id):
+        mlflow.log_metrics(metrics)
+    
+    # Update model version with metrics in description
+    client.update_model_version(
+        name=model_name,
+        version=model_version,
+        description=f"Validation metrics - mAP@0.5: {metrics['val_mAP50']:.4f}, mAP@0.5:0.95: {metrics['val_mAP50_95']:.4f}, Precision: {metrics['val_precision']:.4f}, Recall: {metrics['val_recall']:.4f}"
+    )
+    
+    # Push metrics to XCom for promotion decision
+    context['task_instance'].xcom_push(key='val_metrics', value=metrics)
+    
+    return metrics
+
+
+def promote_to_production(**context):
+    """
+    Promote model to Production if it passes performance thresholds.
+    """
+    import os
+    import mlflow
+    from mlflow.tracking import MlflowClient
+    
+    print("🎯 Checking model promotion criteria...")
+    
+    # Get model info and metrics
+    model_name = context['task_instance'].xcom_pull(task_ids='train_model', key='model_name')
+    model_version = context['task_instance'].xcom_pull(task_ids='train_model', key='model_version')
+    metrics = context['task_instance'].xcom_pull(task_ids='evaluate_model_performance', key='val_metrics')
+    
+    # MLflow configuration
+    MLFLOW_TRACKING_URI = os.getenv('MLFLOW_TRACKING_URI', 'http://mlflow_server:5000')
+    os.environ['MLFLOW_TRACKING_URI'] = MLFLOW_TRACKING_URI
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    client = MlflowClient()
+    
+    # Performance thresholds (configurable via environment variables)
+    threshold_map50 = float(os.getenv('PROMOTION_MAP50_THRESHOLD', '0.5'))  # Default: 50% mAP@0.5
+    threshold_map50_95 = float(os.getenv('PROMOTION_MAP50_95_THRESHOLD', '0.3'))  # Default: 30% mAP@0.5:0.95
+    threshold_precision = float(os.getenv('PROMOTION_PRECISION_THRESHOLD', '0.4'))  # Default: 40% precision
+    threshold_recall = float(os.getenv('PROMOTION_RECALL_THRESHOLD', '0.4'))  # Default: 40% recall
+    
+    print("\n📋 Performance Thresholds:")
+    print(f"   mAP@0.5:      >= {threshold_map50:.2f}")
+    print(f"   mAP@0.5:0.95:  >= {threshold_map50_95:.2f}")
+    print(f"   Precision:     >= {threshold_precision:.2f}")
+    print(f"   Recall:        >= {threshold_recall:.2f}")
+    
+    print("\n📊 Current Model Performance:")
+    print(f"   mAP@0.5:      {metrics['val_mAP50']:.4f}")
+    print(f"   mAP@0.5:0.95:  {metrics['val_mAP50_95']:.4f}")
+    print(f"   Precision:     {metrics['val_precision']:.4f}")
+    print(f"   Recall:        {metrics['val_recall']:.4f}")
+    
+    # Check if model passes all thresholds
+    passes_map50 = metrics['val_mAP50'] >= threshold_map50
+    passes_map50_95 = metrics['val_mAP50_95'] >= threshold_map50_95
+    passes_precision = metrics['val_precision'] >= threshold_precision
+    passes_recall = metrics['val_recall'] >= threshold_recall
+    
+    passes_all = passes_map50 and passes_map50_95 and passes_precision and passes_recall
+    
+    print("\n✅ Threshold Check Results:")
+    print(f"   mAP@0.5:      {'✓ PASS' if passes_map50 else '✗ FAIL'}")
+    print(f"   mAP@0.5:0.95:  {'✓ PASS' if passes_map50_95 else '✗ FAIL'}")
+    print(f"   Precision:     {'✓ PASS' if passes_precision else '✗ FAIL'}")
+    print(f"   Recall:        {'✓ PASS' if passes_recall else '✗ FAIL'}")
+    
+    if passes_all:
+        print("\n🚀 Model passes all thresholds! Promoting to Production...")
+        
+        # Set alias to Production
+        client.set_registered_model_alias(
+            name=model_name,
+            alias="production",
+            version=model_version
+        )
+        
+        # Also transition stage to Production (legacy method)
+        client.transition_model_version_stage(
+            name=model_name,
+            version=model_version,
+            stage="Production",
+            archive_existing_versions=True  # Move old Production models to Archived
+        )
+        
+        print(f"✅ Model {model_name} version {model_version} promoted to Production!")
+        print(f"   Alias: production")
+        print(f"   Stage: Production")
+        
+        # Push promotion status to XCom
+        context['task_instance'].xcom_push(key='promoted', value=True)
+        context['task_instance'].xcom_push(key='promotion_reason', value='Passed all performance thresholds')
+        
+        return {
+            'promoted': True,
+            'reason': 'Passed all performance thresholds',
+            'metrics': metrics
+        }
+    else:
+        print("\n⚠️  Model does not meet production criteria. Keeping in Staging.")
+        
+        failed_checks = []
+        if not passes_map50:
+            failed_checks.append(f"mAP@0.5: {metrics['val_mAP50']:.4f} < {threshold_map50:.2f}")
+        if not passes_map50_95:
+            failed_checks.append(f"mAP@0.5:0.95: {metrics['val_mAP50_95']:.4f} < {threshold_map50_95:.2f}")
+        if not passes_precision:
+            failed_checks.append(f"Precision: {metrics['val_precision']:.4f} < {threshold_precision:.2f}")
+        if not passes_recall:
+            failed_checks.append(f"Recall: {metrics['val_recall']:.4f} < {threshold_recall:.2f}")
+        
+        failure_reason = '; '.join(failed_checks)
+        print(f"   Failed checks: {failure_reason}")
+        
+        # Push promotion status to XCom
+        context['task_instance'].xcom_push(key='promoted', value=False)
+        context['task_instance'].xcom_push(key='promotion_reason', value=failure_reason)
+        
+        return {
+            'promoted': False,
+            'reason': failure_reason,
+            'metrics': metrics
+        }
+
+
 def send_training_notification(**context):
     """
-    Send notification about training completion.
+    Send notification about training completion and promotion status.
     """
     model_name = context['task_instance'].xcom_pull(task_ids='train_model', key='model_name')
     model_version = context['task_instance'].xcom_pull(task_ids='train_model', key='model_version')
     run_id = context['task_instance'].xcom_pull(task_ids='train_model', key='run_id')
+    promoted = context['task_instance'].xcom_pull(task_ids='promote_to_production', key='promoted')
+    promotion_reason = context['task_instance'].xcom_pull(task_ids='promote_to_production', key='promotion_reason')
+    metrics = context['task_instance'].xcom_pull(task_ids='evaluate_model_performance', key='val_metrics')
     
     print("\n" + "="*60)
-    print("🎉 MODEL TRAINING COMPLETED SUCCESSFULLY!")
+    print("🎉 MODEL TRAINING PIPELINE COMPLETED!")
     print("="*60)
     print(f"📦 Model: {model_name}")
     print(f"🔢 Version: {model_version}")
     print(f"🆔 MLflow Run ID: {run_id}")
-    print(f"🎯 Stage: Staging")
-    print(f"🕐 Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    if metrics:
+        print("\n📊 Performance Metrics:")
+        print(f"   mAP@0.5:      {metrics.get('val_mAP50', 0):.4f}")
+        print(f"   mAP@0.5:0.95:  {metrics.get('val_mAP50_95', 0):.4f}")
+        print(f"   Precision:     {metrics.get('val_precision', 0):.4f}")
+        print(f"   Recall:        {metrics.get('val_recall', 0):.4f}")
+    
+    if promoted:
+        print("\n🚀 Status: PROMOTED TO PRODUCTION")
+        print(f"   Stage: Production")
+        print(f"   Alias: production")
+        print(f"   Reason: {promotion_reason}")
+    else:
+        print("\n⚠️  Status: KEPT IN STAGING")
+        print(f"   Stage: Staging")
+        print(f"   Reason: {promotion_reason}")
+    
+    print(f"\n🕐 Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("="*60)
     
     # Here you can add email notification, Slack webhook, etc.
@@ -597,7 +811,9 @@ def send_training_notification(**context):
         'status': 'success',
         'model_name': model_name,
         'model_version': model_version,
-        'run_id': run_id
+        'run_id': run_id,
+        'promoted': promoted,
+        'metrics': metrics
     }
 
 
@@ -649,7 +865,19 @@ with DAG(
         python_callable=upload_model_to_minio,
     )
     
-    # Task 7: Send notification
+    # Task 7: Evaluate model performance
+    evaluate = PythonOperator(
+        task_id='evaluate_model_performance',
+        python_callable=evaluate_model_performance,
+    )
+    
+    # Task 8: Promote to production if passing criteria
+    promote = PythonOperator(
+        task_id='promote_to_production',
+        python_callable=promote_to_production,
+    )
+    
+    # Task 9: Send notification
     notify = PythonOperator(
         task_id='send_training_notification',
         python_callable=send_training_notification,
@@ -660,4 +888,4 @@ with DAG(
     fetch_teacher >> train
     prepare_yaml >> train
     prepare_config >> train
-    train >> upload_to_minio >> notify
+    train >> upload_to_minio >> evaluate >> promote >> notify
