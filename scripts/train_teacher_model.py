@@ -69,7 +69,7 @@ def parse_args():
     parser.add_argument(
         '--batch',
         type=int,
-        default=16,
+        default=8,
         help='Batch size'
     )
     
@@ -374,22 +374,39 @@ def main():
             if not args.no_mlflow and best_model.exists():
                 print("\n📦 Registering model to MLflow Model Registry...")
                 
-                model_uri = f"runs:/{run.info.run_id}/weights/best.pt"
-                
                 try:
+                    # First, log the model artifact explicitly
+                    print("Logging model artifact to MLflow...")
+                    mlflow.log_artifact(str(best_model), artifact_path="model")
+                    
+                    # Now register using the correct artifact path
+                    model_uri = f"runs:/{run.info.run_id}/model/best.pt"
+                    
                     model_version = mlflow.register_model(
                         model_uri=model_uri,
                         name=args.model_name,
                         tags={
                             "training_date": datetime.now().isoformat(),
                             "framework": "ultralytics",
-                            "model_type": "yolo11l",
+                            "model_type": "yolo26x",
                             "role": "teacher",
                             "training_method": "standard"
                         }
                     )
                     
                     print(f"✅ Model registered: {args.model_name} version {model_version.version}")
+                    
+                    # Set Production alias to the latest version
+                    try:
+                        client = mlflow.tracking.MlflowClient()
+                        client.set_registered_model_alias(
+                            args.model_name, 
+                            "Production", 
+                            model_version.version
+                        )
+                        print(f"✅ Set 'Production' alias to version {model_version.version}")
+                    except Exception as e:
+                        print(f"⚠️  Warning: Could not set Production alias: {e}")
                     
                     # Get validation metrics
                     if hasattr(results, 'results_dict'):
@@ -410,6 +427,8 @@ def main():
                     
                 except Exception as e:
                     print(f"⚠️  Warning: Could not register model: {e}")
+                    import traceback
+                    traceback.print_exc()
             
     finally:
         if not args.no_mlflow:
