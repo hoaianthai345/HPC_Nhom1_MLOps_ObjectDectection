@@ -12,7 +12,7 @@ from fastapi import APIRouter, File, UploadFile, HTTPException, Query, Depends
 from PIL import Image
 
 from ...config import settings
-from ...models.yolo_model import YOLODetector, DetectionResult
+from ...models.yolo_model import YOLODetector, TensorRTDetector, DetectionResult
 from ...utils.validators import ImageValidator
 from ...utils.minio_client import get_minio_client
 from .. import dependencies as deps
@@ -357,6 +357,83 @@ async def detect_objects_gpu(
         raise HTTPException(
             status_code=500,
             detail=f"GPU detection failed: {str(e)}",
+        )
+
+
+@router.post(
+    "/detect-tensorrt",
+    response_model=DetectionResponse,
+    responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+)
+async def detect_objects_tensorrt(
+    file: UploadFile = File(..., description="Image file to analyze"),
+    confidence_threshold: Optional[float] = Query(
+        default=None, ge=0.0, le=1.0, description="Confidence threshold for detections"
+    ),
+    iou_threshold: Optional[float] = Query(
+        default=None, ge=0.0, le=1.0, description="IoU threshold for NMS"
+    ),
+    det: TensorRTDetector = Depends(deps.get_tensorrt_detector),
+    val: ImageValidator = Depends(deps.get_validator),
+):
+    """
+    Detect objects in an uploaded image using TensorRT optimized engine.
+    
+    This endpoint provides 2-5x faster inference than standard YOLO on NVIDIA GPUs.
+    Requires TensorRT engine to be built via the convert_tensorrt DAG pipeline.
+    
+    TensorRT engine is automatically fetched from MinIO bucket based on configuration:
+    - model-exports/tensorrt/{model_name}/latest/*.engine (default)
+    - model-exports/tensorrt/{model_name}/v{version}/*.engine (if version specified)
+    """
+    request_id = str(uuid.uuid4())[:8]
+    logger.info(f"[{request_id}] Processing TensorRT detection request for: {file.filename}")
+
+    try:
+        # Validate image
+        image_bytes, width, height, img_format = await val.validate_upload_file(file)
+        logger.info(f"[{request_id}] Image validated: {width}x{height}, format: {img_format}")
+
+        # Run detection with TensorRT
+        result = det.predict(
+            image_bytes,
+            confidence_threshold=confidence_threshold,
+            iou_threshold=iou_threshold,
+        )
+        logger.info(f"[{request_id}] TensorRT detection complete: {result.num_detections} objects found in {result.inference_time*1000:.2f}ms")
+
+        # Save sample + predictions in production folder (YOLO format)
+        _save_production_sample(
+            image_bytes=image_bytes,
+            result=result,
+            original_filename=file.filename or f"{request_id}.jpg",
+        )
+        
+        # Save user request image and student predictions to production-data bucket organized by date
+        _save_request_image_to_bucket(
+            image_bytes=image_bytes,
+            original_filename=file.filename or f"{request_id}.jpg",
+            result=result,
+        )
+
+        # Build response
+        result_dict = result.to_dict()
+
+        return DetectionResponse(
+            request_id=request_id,
+            num_detections=result_dict["num_detections"],
+            image_size=ImageSize(**result_dict["image_size"]),
+            inference_time_ms=result_dict["inference_time_ms"],
+            detections=[DetectionItem(**d) for d in result_dict["detections"]],
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[{request_id}] TensorRT detection failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"TensorRT detection failed: {str(e)}",
         )
 
 
