@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 import os
 from airflow import DAG
 from airflow.providers.standard.operators.python import PythonOperator
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 
 
 default_args = {
@@ -883,9 +884,21 @@ with DAG(
         python_callable=send_training_notification,
     )
     
+    # Task 10: Trigger TensorRT conversion for promoted model
+    trigger_tensorrt = TriggerDagRunOperator(
+        task_id='trigger_tensorrt_conversion',
+        trigger_dag_id='convert_tensorrt',
+        conf={
+            'model_name': "{{ task_instance.xcom_pull(task_ids='train_model', key='model_name') }}",
+            'model_version': "{{ task_instance.xcom_pull(task_ids='train_model', key='model_version') }}",
+        },
+        wait_for_completion=False,
+        trigger_rule='all_success',  # Only trigger if promotion succeeded
+    )
+    
     # Define task dependencies
     fetch_data >> prepare_yaml
     fetch_teacher >> train
     prepare_yaml >> train
     prepare_config >> train
-    train >> upload_to_minio >> evaluate >> promote >> notify
+    train >> upload_to_minio >> evaluate >> promote >> notify >> trigger_tensorrt
