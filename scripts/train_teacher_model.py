@@ -2,7 +2,7 @@
 """
 Train Teacher Model (YOLOv26x) for Knowledge Distillation.
 
-This script trains a larger, more accurate YOLO model (yolo26l) that can be used as:
+This script trains a larger, more accurate YOLO model (yolo26x) that can be used as:
 1. A teacher model for knowledge distillation
 2. A baseline for comparison
 3. A production model if performance is sufficient
@@ -38,7 +38,7 @@ from ultralytics import YOLO
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description='Train YOLO teacher model (yolo26l)',
+        description='Train YOLO teacher model (yolo26x)',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     
