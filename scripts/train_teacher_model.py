@@ -379,12 +379,30 @@ def main():
                     print("Logging model artifact to MLflow...")
                     mlflow.log_artifact(str(best_model), artifact_path="model")
                     
-                    # Now register using the correct artifact path
-                    model_uri = f"runs:/{run.info.run_id}/model/best.pt"
+                    # Use MlflowClient to register the artifact as a model
+                    client = mlflow.tracking.MlflowClient()
                     
-                    model_version = mlflow.register_model(
-                        model_uri=model_uri,
+                    # Create or get the registered model
+                    try:
+                        client.create_registered_model(
+                            args.model_name,
+                            tags={
+                                "framework": "ultralytics",
+                                "model_type": "yolo26x",
+                                "role": "teacher"
+                            }
+                        )
+                        print(f"Successfully registered model '{args.model_name}'.")
+                    except Exception:
+                        # Model already exists
+                        pass
+                    
+                    # Create a new model version from the artifact
+                    source = f"runs:/{run.info.run_id}/model/best.pt"
+                    model_version = client.create_model_version(
                         name=args.model_name,
+                        source=source,
+                        run_id=run.info.run_id,
                         tags={
                             "training_date": datetime.now().isoformat(),
                             "framework": "ultralytics",
@@ -398,7 +416,6 @@ def main():
                     
                     # Set Production alias to the latest version
                     try:
-                        client = mlflow.tracking.MlflowClient()
                         client.set_registered_model_alias(
                             args.model_name, 
                             "Production", 
