@@ -43,7 +43,7 @@ services:
     container_name: aivn-grafana
     restart: unless-stopped
     ports:
-      - "3250:3000"
+      - "3000:3000"
     depends_on:
       - prometheus
     healthcheck:
