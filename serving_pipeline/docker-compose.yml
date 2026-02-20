@@ -5,6 +5,10 @@ services:
       dockerfile: serving_pipeline/docker/Dockerfile.backend
     container_name: serving_api
     restart: unless-stopped
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
     ports:
       - "8000:8000"
     networks:
@@ -50,6 +54,10 @@ services:
       dockerfile: serving_pipeline/docker/Dockerfile.backend
     container_name: serving_api_gpu
     restart: unless-stopped
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
     ports:
       - "8001:8000"
     networks:
@@ -132,6 +140,10 @@ services:
         condition: service_healthy
       api-gpu:
         condition: service_healthy
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7860"]
       interval: 30s
