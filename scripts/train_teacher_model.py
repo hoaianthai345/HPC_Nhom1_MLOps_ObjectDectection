@@ -410,16 +410,16 @@ def main():
                     
                     print(f"✅ Model registered: {args.model_name} version {model_version.version}")
                     
-                    # Set Production alias to the latest version
+                    # Set production alias to the latest version (using lowercase for consistency)
                     try:
                         client.set_registered_model_alias(
                             args.model_name, 
-                            "Production", 
+                            "production", 
                             model_version.version
                         )
-                        print(f"✅ Set 'Production' alias to version {model_version.version}")
+                        print(f"✅ Set 'production' alias to version {model_version.version}")
                     except Exception as e:
-                        print(f"⚠️  Warning: Could not set Production alias: {e}")
+                        print(f"⚠️  Warning: Could not set production alias: {e}")
                     
                     # Get validation metrics
                     if hasattr(results, 'results_dict'):
