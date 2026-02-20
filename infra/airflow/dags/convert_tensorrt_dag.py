@@ -8,7 +8,7 @@ Trigger Mode:
 - Manual: Can be manually triggered if a production model exists
 
 Prerequisites:
-- A model must be registered in MLflow with 'production' alias or 'Production' stage
+- A model must be registered in MLflow with 'production' alias stage
 - Model must have been trained and promoted via 'train_model' DAG
 - NVIDIA GPU with TensorRT support must be available
 
@@ -93,7 +93,7 @@ def fetch_production_model(**context):
         # Fallback to legacy Production stage
         try:
             production_versions = client.search_model_versions(f"name='{model_name}'")
-            production_models = [v for v in production_versions if v.current_stage == 'Production']
+            production_models = [v for v in production_versions if v.current_stage == 'production']
             
             if not production_models:
                 # Check if model exists at all

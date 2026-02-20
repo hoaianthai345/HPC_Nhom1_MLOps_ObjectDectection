@@ -144,7 +144,7 @@ def download_teacher_model(**context):
             except Exception:
                 # Fallback to Production stage
                 versions = client.search_model_versions(f"name='{model_name}'")
-                production_models = [v for v in versions if v.current_stage == 'Production']
+                production_models = [v for v in versions if v.current_stage == 'production']
                 
                 if not production_models:
                     # Try any available version
