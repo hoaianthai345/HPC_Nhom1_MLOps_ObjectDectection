@@ -27,7 +27,7 @@ MLflow:
 
 Teacher Model:
 - TEACHER_MODEL_NAME (default: 'yolo-teacher-model')
-- TEACHER_MODEL_ALIAS (default: 'Production')
+- TEACHER_MODEL_ALIAS (default: 'production')
 
 Training:
 - TRAIN_EPOCHS (default: 1)
@@ -324,7 +324,7 @@ def download_teacher_model(**context):
     
     # Teacher model configuration from Airflow Variables or environment
     teacher_model_name = get_config('TEACHER_MODEL_NAME', 'yolo-teacher-model')
-    teacher_model_alias = get_config('TEACHER_MODEL_ALIAS', 'Production')  # or version number
+    teacher_model_alias = get_config('TEACHER_MODEL_ALIAS', 'production')  # or version number
     
     # Local path for teacher model
     teacher_weights_path = Path('/tmp/teacher_model/best.pt')
