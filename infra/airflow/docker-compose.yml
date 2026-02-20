@@ -50,7 +50,9 @@ x-airflow-common:
   # Comment the image line, place your Dockerfile in the directory where you placed the docker-compose.yaml
   # and uncomment the "build" line below, Then run `docker-compose build` to build the images.
   # image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:3.1.0}
-  build: .
+  build:
+    context: ../..
+    dockerfile: infra/airflow/Dockerfile
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
@@ -78,41 +80,14 @@ x-airflow-common:
     # The following line can be used to set a custom config file, stored in the local config folder
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
     
-    # MinIO Configuration
-    MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
-    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minio_admin}
-    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minio_password123}
-    AWS_DEFAULT_REGION: 'us-east-1'
-    
-    # MLflow Configuration
-    MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow_server:5000}
-    MLFLOW_S3_ENDPOINT_URL: ${MINIO_ENDPOINT:-http://minio:9000}
-    
-    # Training Configuration
-    TRAIN_EPOCHS: ${TRAIN_EPOCHS:-10}
-    TRAIN_BATCH_SIZE: ${TRAIN_BATCH_SIZE:-16}
-    TRAIN_DEVICE: ${TRAIN_DEVICE:-0}
-    
-    # Model Promotion Thresholds
-    PROMOTION_MAP50_THRESHOLD: ${PROMOTION_MAP50_THRESHOLD:-0.5}
-    PROMOTION_MAP50_95_THRESHOLD: ${PROMOTION_MAP50_95_THRESHOLD:-0.3}
-    PROMOTION_PRECISION_THRESHOLD: ${PROMOTION_PRECISION_THRESHOLD:-0.4}
-    PROMOTION_RECALL_THRESHOLD: ${PROMOTION_RECALL_THRESHOLD:-0.4}
-    
-    # TensorRT Configuration
-    TENSORRT_IMGSZ: ${TENSORRT_IMGSZ:-640}
-    TENSORRT_FP16: ${TENSORRT_FP16:-true}
-    TENSORRT_DYNAMIC: ${TENSORRT_DYNAMIC:-false}
-    TENSORRT_WORKSPACE: ${TENSORRT_WORKSPACE:-4}
-    TENSORRT_BATCH: ${TENSORRT_BATCH:-1}
-    TENSORRT_DEVICE: ${TENSORRT_DEVICE:-0}
-    TENSORRT_BUCKET: ${TENSORRT_BUCKET:-model-exports}
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - ../../training_pipeline:/opt/airflow/training_pipeline
   user: "${AIRFLOW_UID:-50000}:0"
+  
   depends_on:
     &airflow-common-depends-on
     redis:
@@ -225,6 +200,7 @@ services:
       # See https://airflow.apache.org/docs/docker-stack/entrypoint.html#signal-propagation
       DUMB_INIT_SETSID: "0"
     restart: always
+    shm_size: '4gb'  # Increase shared memory for PyTorch DataLoader workers
     networks:
       - aio-network
     depends_on:

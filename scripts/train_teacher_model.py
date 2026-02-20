@@ -375,10 +375,6 @@ def main():
                 print("\n📦 Registering model to MLflow Model Registry...")
                 
                 try:
-                    # First, log the model artifact explicitly
-                    print("Logging model artifact to MLflow...")
-                    mlflow.log_artifact(str(best_model), artifact_path="model")
-                    
                     # Use MlflowClient to register the artifact as a model
                     client = mlflow.tracking.MlflowClient()
                     
@@ -397,8 +393,8 @@ def main():
                         # Model already exists
                         pass
                     
-                    # Create a new model version from the artifact
-                    source = f"runs:/{run.info.run_id}/model/best.pt"
+                    # Create a new model version from the artifact (YOLO logs to weights/ path)
+                    source = f"runs:/{run.info.run_id}/weights/best.pt"
                     model_version = client.create_model_version(
                         name=args.model_name,
                         source=source,
