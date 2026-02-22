@@ -89,9 +89,17 @@ def call_api(
     image: Image.Image,
     confidence_threshold: float,
     iou_threshold: float,
-    use_gpu: bool = False
+    inference_mode: str = "cpu"
 ) -> Tuple[Optional[Image.Image], str]:
-
+    """
+    Call detection API with specified inference mode.
+    
+    Args:
+        image: Input image
+        confidence_threshold: Confidence threshold
+        iou_threshold: IoU threshold
+        inference_mode: One of "cpu", "gpu", or "tensorrt"
+    """
     if image is None:
         return None, "Please upload an image"
 
@@ -100,13 +108,20 @@ def call_api(
         image.save(img_byte_arr, format="JPEG", quality=95)
         img_byte_arr.seek(0)
 
-        # Use GPU service on different port if GPU is selected, otherwise use CPU service
-        if use_gpu:
+        # Determine API URL and endpoint based on inference mode
+        api_url = ""  # Initialize to avoid unbound warning
+        if inference_mode == "gpu":
+            # GPU service on separate port
             api_url = f"http://{settings.GPU_API_HOST}:{settings.GPU_API_PORT}"
-        else:
+            endpoint = "/detect"
+        elif inference_mode == "tensorrt":
+            # TensorRT on GPU service port
+            api_url = f"http://{settings.GPU_API_HOST}:{settings.GPU_API_PORT}"
+            endpoint = "/detect-tensorrt"
+        else:  # cpu
+            # CPU service
             api_url = f"http://{settings.API_HOST}:{settings.API_PORT}"
-        
-        endpoint = "/detect"
+            endpoint = "/detect"
         
         response = requests.post(
             f"{api_url}{endpoint}",
@@ -127,7 +142,7 @@ def call_api(
         return annotated_image, results_text
 
     except requests.exceptions.ConnectionError:
-        return None, " **Error:** Cannot connect to API. Make sure the FastAPI server is running."
+        return None, f" **Error:** Cannot connect to API at {api_url}. Make sure the FastAPI server is running."
     except Exception as e:
         logger.error(f"API call error: {str(e)}")
         return None, f" **Error:** {str(e)}"
@@ -145,14 +160,37 @@ def check_gpu_available() -> bool:
     return False
 
 
+def check_tensorrt_available() -> bool:
+    """Check if TensorRT endpoint is available on GPU service."""
+    try:
+        gpu_api_url = f"http://{settings.GPU_API_HOST}:{settings.GPU_API_PORT}"
+        response = requests.get(f"{gpu_api_url}/health", timeout=5)
+        if response.status_code == 200:
+            # TensorRT is available on the same service as GPU
+            return True
+    except requests.exceptions.RequestException:
+        logger.warning("TensorRT service not reachable at %s:%s", settings.GPU_API_HOST, settings.GPU_API_PORT)
+    return False
+
+
 def create_gradio_app() -> gr.Blocks:
     """Tạo Gradio UI, luôn gọi FastAPI backend (/detect)."""
-    # Check GPU availability at startup
+    # Check GPU and TensorRT availability at startup
     gpu_available = check_gpu_available()
+    tensorrt_available = check_tensorrt_available()
+    
+    status_lines = []
     if gpu_available:
-        gpu_status_msg = f"🚀 GPU service is available on port {settings.GPU_API_PORT}"
+        status_lines.append(f"🚀 GPU service is available on port {settings.GPU_API_PORT}")
     else:
-        gpu_status_msg = f"⚠️ GPU service not available on port {settings.GPU_API_PORT} (CPU only mode)"
+        status_lines.append(f"⚠️ GPU service not available on port {settings.GPU_API_PORT} (CPU only mode)")
+    
+    if tensorrt_available:
+        status_lines.append(f"🔥 TensorRT acceleration is available")
+    else:
+        status_lines.append(f"⚠️ TensorRT not available")
+    
+    gpu_status_msg = " | ".join(status_lines)
     
     with gr.Blocks(
         title=settings.APP_NAME,
@@ -180,17 +218,23 @@ def create_gradio_app() -> gr.Blocks:
                 )
                 
                 with gr.Accordion("⚙️ Settings", open=True):
-                    # Only show GPU option if available
+                    # Build device choices based on availability
+                    device_choices = [("🖥️ CPU (Standard)", "cpu")]
                     if gpu_available:
-                        device_choices = [("🖥️ CPU (Standard)", False), ("🚀 GPU (Fast)", True)]
-                        device_info = "Select inference device"
-                    else:
-                        device_choices = [("🖥️ CPU (Standard)", False)]
-                        device_info = "GPU not available - using CPU only"
+                        device_choices.append(("🚀 GPU (Fast)", "gpu"))
+                    if tensorrt_available:
+                        device_choices.append(("🔥 TensorRT (Ultra Fast)", "tensorrt"))
+                    
+                    device_info_parts = ["Select inference device"]
+                    if not gpu_available:
+                        device_info_parts.append("GPU not available")
+                    if not tensorrt_available:
+                        device_info_parts.append("TensorRT not available")
+                    device_info = " | ".join(device_info_parts)
                     
                     device_radio = gr.Radio(
                         choices=device_choices,
-                        value=False,
+                        value="cpu",
                         label="Inference Device",
                         info=device_info
                     )
@@ -244,6 +288,7 @@ def create_gradio_app() -> gr.Blocks:
                 ### API Endpoints
                 - **CPU Service:** [http://localhost:{settings.API_PORT}/detect](http://localhost:{settings.API_PORT}/detect)
                 - **GPU Service:** [http://localhost:{settings.GPU_API_PORT}/detect](http://localhost:{settings.GPU_API_PORT}/detect)
+                - **TensorRT Service:** [http://localhost:{settings.GPU_API_PORT}/detect-tensorrt](http://localhost:{settings.GPU_API_PORT}/detect-tensorrt)
                 - **CPU Swagger UI:** [http://localhost:{settings.API_PORT}/docs](http://localhost:{settings.API_PORT}/docs)
                 - **GPU Swagger UI:** [http://localhost:{settings.GPU_API_PORT}/docs](http://localhost:{settings.GPU_API_PORT}/docs)
                 """

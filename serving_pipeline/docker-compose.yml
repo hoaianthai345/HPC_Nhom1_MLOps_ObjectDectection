@@ -5,6 +5,10 @@ services:
       dockerfile: serving_pipeline/docker/Dockerfile.backend
     container_name: serving_api
     restart: unless-stopped
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
     ports:
       - "8000:8000"
     networks:
@@ -20,7 +24,7 @@ services:
       - YOLO_MAX_DETECTIONS=100
       - DEVICE=cpu
       - MLFLOW_TRACKING_URI=http://mlflow_server:5000
-      - MLFLOW_MODEL_URI=models:/yolo-nano-model/production
+      - MLFLOW_MODEL_URI=models:/yolo-nano-model@production
       - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
       - AWS_ACCESS_KEY_ID=minio_admin
       - AWS_SECRET_ACCESS_KEY=minio_password123
@@ -50,6 +54,10 @@ services:
       dockerfile: serving_pipeline/docker/Dockerfile.backend
     container_name: serving_api_gpu
     restart: unless-stopped
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
     ports:
       - "8001:8000"
     networks:
@@ -65,7 +73,7 @@ services:
       - YOLO_MAX_DETECTIONS=100
       - DEVICE=cuda
       - MLFLOW_TRACKING_URI=http://mlflow_server:5000
-      - MLFLOW_MODEL_URI=models:/yolo-nano-model/production
+      - MLFLOW_MODEL_URI=models:/yolo-nano-model@production
       - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
       - AWS_ACCESS_KEY_ID=minio_admin
       - AWS_SECRET_ACCESS_KEY=minio_password123
@@ -74,6 +82,12 @@ services:
       - USE_MINIO=true
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_PRODUCTION_BUCKET=production-data
+      # TensorRT Settings
+      - TENSORRT_ENABLED=true
+      - TENSORRT_MODEL_NAME=yolo-nano-model
+      - TENSORRT_BUCKET=model-exports
+      - TENSORRT_USE_LATEST=true
+      - TENSORRT_VERSION=
     volumes:
       # Mount source code for hot reload
       - ..:/app:ro
@@ -126,6 +140,10 @@ services:
         condition: service_healthy
       api-gpu:
         condition: service_healthy
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7860"]
       interval: 30s

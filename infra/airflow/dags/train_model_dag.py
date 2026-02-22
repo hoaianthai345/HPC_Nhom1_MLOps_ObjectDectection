@@ -3,30 +3,86 @@ Airflow DAG for Model Training with MinIO Data Fetching and Auto-Promotion.
 
 This DAG orchestrates the complete training pipeline:
 1. Fetches training data from MinIO bucket
-2. Prepares data and configuration
-3. Trains YOLO model (yolo11n - nano model for efficiency)
-4. Logs model and metrics to MLflow
-5. Registers trained model to MLflow Model Registry (Staging)
-6. Evaluates model performance on validation set
-7. Automatically promotes to Production if metrics pass thresholds
-8. Sends notification with training and promotion results
+2. Downloads finetuned teacher model from MLflow Model Registry
+3. Prepares data and configuration for training
+4. Trains YOLO student model using Knowledge Distillation
+5. Logs student model and metrics to MLflow
+6. Registers trained student model to MLflow Model Registry (with 'staging' alias)
+7. Evaluates model performance on validation set
+8. Automatically promotes to Production if metrics pass thresholds (sets 'production' alias)
+9. Sends notification with training and promotion results
 
-Performance Thresholds (configurable via .env):
+Configuration (via Airflow Variables or Environment Variables):
+Priority: Airflow Variable > Environment Variable > Default
+
+MinIO/Storage:
+- MINIO_ENDPOINT (default: 'http://minio:9000')
+- AWS_ACCESS_KEY_ID (default: 'minio_admin')
+- AWS_SECRET_ACCESS_KEY (default: 'minio_password123')
+- MINIO_TRAINING_BUCKET (default: 'training-data')
+- DATA_VERSION (default: None - uses latest)
+
+MLflow:
+- MLFLOW_TRACKING_URI (default: 'http://mlflow_server:5000')
+
+Teacher Model:
+- TEACHER_MODEL_NAME (default: 'yolo-teacher-model')
+- TEACHER_MODEL_ALIAS (default: 'production')
+
+Training:
+- TRAIN_EPOCHS (default: 1)
+- TRAIN_BATCH_SIZE (default: 16)
+- TRAIN_DEVICE (default: '0')
+
+Promotion Thresholds:
 - PROMOTION_MAP50_THRESHOLD (default: 0.5)
 - PROMOTION_MAP50_95_THRESHOLD (default: 0.3)
 - PROMOTION_PRECISION_THRESHOLD (default: 0.4)
 - PROMOTION_RECALL_THRESHOLD (default: 0.4)
 
+To set Airflow Variables via UI:
+Admin > Variables > Add
+Or via CLI:
+airflow variables set TRAIN_EPOCHS 10
+airflow variables set PROMOTION_MAP50_THRESHOLD 0.6
+
 Schedule: Manual trigger or cron-based
 
-Note: Uses standard Ultralytics training. Knowledge distillation via custom
-teacher/student parameters is not supported by Ultralytics train() API.
+Prerequisites:
+- Teacher model must be trained and registered in MLflow beforehand
+  Run: python scripts/train_teacher_model.py --data <data.yaml> --epochs <N>
+- Training data must be available in MinIO bucket
+
+Note: Uses Knowledge Distillation training via custom training script
+(training_pipeline/src/train.py) with teacher/student model configuration.
+Uses modern MLflow alias-based model registry (not deprecated stages).
 """
 from datetime import datetime, timedelta
 import os
 from airflow import DAG
+from airflow.sdk import Variable
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
+
+
+def get_config(key: str, default=None):
+    """
+    Get configuration value from Airflow Variable with fallback to environment variable.
+    Priority: Airflow Variable > Environment Variable > Default value
+    
+    Args:
+        key: Configuration key name
+        default: Default value if not found in Variable or environment
+        
+    Returns:
+        Configuration value
+    """
+    try:
+        # Try to get from Airflow Variable first (raises exception if not found)
+        return Variable.get(key)
+    except Exception:
+        # Fall back to environment variable if Variable not found or any error occurs
+        return os.getenv(key, default)
 
 
 default_args = {
@@ -54,14 +110,14 @@ def fetch_data_from_minio(**context):
     
     print("🗄️  Starting data fetching from MinIO...")
     
-    # MinIO configuration
-    MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'http://minio:9000')
-    MINIO_ACCESS_KEY = os.getenv('AWS_ACCESS_KEY_ID', 'minio_admin')
-    MINIO_SECRET_KEY = os.getenv('AWS_SECRET_ACCESS_KEY', 'minio_password123')
-    BUCKET_NAME = os.getenv('MINIO_TRAINING_BUCKET', 'training-data')
+    # MinIO configuration (from Airflow Variables or environment)
+    MINIO_ENDPOINT = get_config('MINIO_ENDPOINT', 'http://minio:9000')
+    MINIO_ACCESS_KEY = get_config('AWS_ACCESS_KEY_ID', 'minio_admin')
+    MINIO_SECRET_KEY = get_config('AWS_SECRET_ACCESS_KEY', 'minio_password123')
+    BUCKET_NAME = get_config('MINIO_TRAINING_BUCKET', 'training-data')
     
-    # Get version from environment variable or use latest
-    DATA_VERSION = os.getenv('DATA_VERSION', None)  # e.g., 'v1.0' or None for latest
+    # Get version from Airflow Variable or use latest
+    DATA_VERSION = get_config('DATA_VERSION', None)  # e.g., 'v1.0' or None for latest
     
     # Local paths
     data_dir = Path('/tmp/training_data')
@@ -246,63 +302,136 @@ def prepare_data_yaml(**context):
 
 def download_teacher_model(**context):
     """
-    Download or fetch teacher model from MinIO or MLflow Model Registry.
+    Download teacher model from MLflow Model Registry.
+    The teacher model should be finetuned and logged to MLflow beforehand.
     """
-    import boto3
-    from botocore.client import Config
+    import mlflow
     from pathlib import Path
     import os
+    import shutil
     
-    print("🎓 Fetching teacher model...")
+    print("🎓 Fetching teacher model from MLflow...")
     
-    # MinIO configuration
-    MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'http://minio:9000')
-    MINIO_ACCESS_KEY = os.getenv('AWS_ACCESS_KEY_ID', 'minio_admin')
-    MINIO_SECRET_KEY = os.getenv('AWS_SECRET_ACCESS_KEY', 'minio_password123')
-    BUCKET_NAME = 'mlflow'  # Teacher model stored in MLflow bucket
+    # MLflow configuration (from Airflow Variables or environment)
+    MLFLOW_TRACKING_URI = get_config('MLFLOW_TRACKING_URI', 'http://mlflow_server:5000')
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     
-    # Teacher model path
-    teacher_weights_path = Path('/tmp/teacher_model/yolov11x.pt')
+    # Configure AWS/MinIO credentials for MLflow artifact storage
+    os.environ['AWS_ACCESS_KEY_ID'] = get_config('AWS_ACCESS_KEY_ID', 'minio_admin')
+    os.environ['AWS_SECRET_ACCESS_KEY'] = get_config('AWS_SECRET_ACCESS_KEY', 'minio_password123')
+    os.environ['MLFLOW_S3_ENDPOINT_URL'] = get_config('MINIO_ENDPOINT', 'http://minio:9000')
+    os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+    
+    # Teacher model configuration from Airflow Variables or environment
+    teacher_model_name = get_config('TEACHER_MODEL_NAME', 'yolo-teacher-model')
+    teacher_model_alias = get_config('TEACHER_MODEL_ALIAS', 'production')  # or version number
+    
+    # Local path for teacher model
+    teacher_weights_path = Path('/tmp/teacher_model/best.pt')
     teacher_weights_path.parent.mkdir(parents=True, exist_ok=True)
     
+    print(f"📊 MLflow Configuration:")
+    print(f"   Tracking URI: {MLFLOW_TRACKING_URI}")
+    print(f"   Model Name: {teacher_model_name}")
+    print(f"   Alias: {teacher_model_alias}")
+    
     try:
-        # Try to download from MinIO first
-        s3_client = boto3.client(
-            's3',
-            endpoint_url=MINIO_ENDPOINT,
-            aws_access_key_id=MINIO_ACCESS_KEY,
-            aws_secret_access_key=MINIO_SECRET_KEY,
-            config=Config(signature_version='s3v4'),
-            region_name='us-east-1'
-        )
+        # Use MlflowClient to get model version by alias (modern approach)
+        from mlflow.tracking import MlflowClient
+        client = MlflowClient()
         
-        # Check if teacher model exists in model-exports bucket
-        try:
-            s3_client.download_file(
-                'model-exports', 
-                'teacher/yolov11x.pt', 
-                str(teacher_weights_path)
+        print(f"📥 Fetching model version with alias '{teacher_model_alias}'...")
+        
+        # Get model version by alias
+        model_version = client.get_model_version_by_alias(teacher_model_name, teacher_model_alias)
+        version_number = model_version.version
+        run_id = model_version.run_id
+        
+        print(f"✓ Found model version: {version_number}")
+        print(f"✓ Run ID: {run_id}")
+        
+        # Download directly from run artifacts (YOLO logs to weights/ path)
+        # Try common paths where YOLO models might be stored
+        artifact_paths = ['weights/best.pt', 'model/best.pt', 'best.pt']
+        downloaded_path = None
+        
+        for artifact_path in artifact_paths:
+            try:
+                teacher_model_uri = f"runs:/{run_id}/{artifact_path}"
+                print(f"📥 Trying to download from: {teacher_model_uri}")
+                
+                downloaded_path = mlflow.artifacts.download_artifacts(
+                    artifact_uri=teacher_model_uri,
+                    dst_path=str(teacher_weights_path.parent)
+                )
+                print(f"✅ Successfully downloaded from {artifact_path}")
+                break
+            except Exception as e:
+                print(f"   ✗ Not found at {artifact_path}")
+                continue
+        
+        if not downloaded_path:
+            raise FileNotFoundError(
+                f"Could not find teacher model in any of the expected paths: {artifact_paths}"
             )
-            print(f"✅ Downloaded teacher model from MinIO")
-        except:
-            # If not in MinIO, download from Ultralytics pretrained
-            print("⬇️  Downloading pretrained YOLOv11x model...")
-            from ultralytics import YOLO
-            model = YOLO('yolo11x.pt')  # This will auto-download
+        
+        print(f"✅ Downloaded teacher model from MLflow")
+        print(f"   Run ID: {run_id}")
+        print(f"   Downloaded to: {downloaded_path}")
+        
+        # Handle the downloaded file
+        downloaded_path_obj = Path(downloaded_path)
+        
+        # If it's already the .pt file at target location, we're done
+        if downloaded_path_obj.resolve() == teacher_weights_path.resolve():
+            print(f"✅ Model already at target location: {teacher_weights_path}")
+        elif downloaded_path_obj.is_file() and downloaded_path_obj.suffix == '.pt':
+            # It's a .pt file but not at target, copy it
+            shutil.copy(str(downloaded_path_obj), str(teacher_weights_path))
+            print(f"📁 Copied model file to: {teacher_weights_path}")
+        else:
+            # If it's a directory, look for .pt files
+            pt_files = list(downloaded_path_obj.rglob('*.pt'))
             
-            # Move to teacher path
-            import shutil
-            shutil.copy('yolo11x.pt', str(teacher_weights_path))
-            print(f"✅ Downloaded pretrained teacher model")
+            if pt_files:
+                # Use the first .pt file found (or best.pt if it exists)
+                best_pt = None
+                for pt_file in pt_files:
+                    if pt_file.name == 'best.pt':
+                        best_pt = pt_file
+                        break
+                
+                model_file = best_pt if best_pt else pt_files[0]
+                
+                # Only copy if not already at target
+                if model_file.resolve() != teacher_weights_path.resolve():
+                    shutil.copy(str(model_file), str(teacher_weights_path))
+                    print(f"📁 Copied model file to: {teacher_weights_path}")
+                else:
+                    print(f"✅ Model already at target location: {teacher_weights_path}")
+            else:
+                raise FileNotFoundError(f"No .pt model file found in downloaded artifacts at {downloaded_path}")
         
-        # Push teacher model path to XCom
-        context['task_instance'].xcom_push(key='teacher_weights', value=str(teacher_weights_path))
+        if not teacher_weights_path.exists():
+            raise FileNotFoundError(f"Teacher model file not found at {teacher_weights_path}")
         
-        return str(teacher_weights_path)
+        print(f"✅ Teacher model ready at: {teacher_weights_path}")
         
     except Exception as e:
-        print(f"❌ Error fetching teacher model: {e}")
+        print(f"❌ Error downloading teacher model from MLflow: {e}")
+        print(f"\n⚠️  Make sure:")
+        print(f"   1. Teacher model is trained and registered in MLflow")
+        print(f"   2. Model name '{teacher_model_name}' exists in MLflow Model Registry")
+        print(f"   3. Model has alias '{teacher_model_alias}' set (not stage)")
+        print(f"   4. Model artifacts exist in MLflow run (check MinIO bucket)")
+        print(f"\nYou can train and register teacher model using:")
+        print(f"   python scripts/train_teacher_model.py --data <data.yaml> --epochs <N>")
         raise
+    
+    # Push teacher model path to XCom
+    context['task_instance'].xcom_push(key='teacher_weights', value=str(teacher_weights_path))
+    
+    return str(teacher_weights_path)
 
 
 def prepare_training_config(**context):
@@ -317,20 +446,20 @@ def prepare_training_config(**context):
     config_dir = Path('/tmp/training_config')
     config_dir.mkdir(parents=True, exist_ok=True)
     
-    # Training configuration
+    # Training configuration for Knowledge Distillation (from Airflow Variables or environment)
     training_config = {
         'training': {
-            'epochs': int(os.getenv('TRAIN_EPOCHS', '10')),
+            'epochs': int(get_config('TRAIN_EPOCHS', '1')),
             'imgsz': 640,
-            'batch': int(os.getenv('TRAIN_BATCH_SIZE', '16')),
-            'device': os.getenv('TRAIN_DEVICE', '0'),
-            'workers': 0,
+            'batch': int(get_config('TRAIN_BATCH_SIZE', '16')),
+            'device': get_config('TRAIN_DEVICE', '0'),
+            'workers': 2,  # Reduced to avoid shared memory issues in Docker
             'seed': 42,
             'deterministic': True
         },
         'optimization': {
-            'optimizer': 'AdamW',
-            'lr0': 0.001,
+            'optimizer': 'auto',
+            'lr0': 0.01,
             'warmup_epochs': 3
         },
         'augmentation': {
@@ -345,8 +474,8 @@ def prepare_training_config(**context):
             'box_objectness_threshold': 0.3
         },
         'logging': {
-            'project': 'yolo_training',  # Changed from yolo-distillation
-            'name': f'training_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
+            'project': 'yolo_training',
+            'name': f'kd_training_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
             'model_name': 'yolo-nano-model',
             'save': True,
             'save_period': 10,
@@ -359,6 +488,8 @@ def prepare_training_config(**context):
         yaml.dump(training_config, f, default_flow_style=False)
     
     print(f"✅ Created training config at {config_path}")
+    print(f"   Distillation: Enabled")
+    print(f"   Teacher-Student training: Active")
     
     # Push config path to XCom
     context['task_instance'].xcom_push(key='train_config', value=str(config_path))
@@ -368,17 +499,18 @@ def prepare_training_config(**context):
 
 def train_model(**context):
     """
-    Train YOLO model.
-    Note: Knowledge distillation is not directly supported via Ultralytics train() parameters.
-    Using standard training approach with student model (yolo11n).
+    Train YOLO model using Knowledge Distillation.
+    Calls the custom training script from training_pipeline/src/train.py
+    which implements teacher-student distillation.
     """
     import yaml
     import os
+    import subprocess
     from pathlib import Path
-    from ultralytics import YOLO
     import mlflow
+    from mlflow.tracking import MlflowClient
     
-    print("🚀 Starting model training...")
+    print("🚀 Starting Knowledge Distillation training...")
     
     # Get paths from previous tasks
     data_yaml = context['task_instance'].xcom_pull(task_ids='prepare_data_yaml', key='data_yaml')
@@ -390,198 +522,140 @@ def train_model(**context):
     with open(train_config, 'r') as f:
         cfg = yaml.safe_load(f)
     
-    # MLflow configuration
-    MLFLOW_TRACKING_URI = os.getenv('MLFLOW_TRACKING_URI', 'http://mlflow_server:5000')
-    os.environ['MLFLOW_TRACKING_URI'] = MLFLOW_TRACKING_URI
-    os.environ['AWS_ACCESS_KEY_ID'] = os.getenv('AWS_ACCESS_KEY_ID', 'minio_admin')
-    os.environ['AWS_SECRET_ACCESS_KEY'] = os.getenv('AWS_SECRET_ACCESS_KEY', 'minio_password123')
-    os.environ['MLFLOW_S3_ENDPOINT_URL'] = os.getenv('MINIO_ENDPOINT', 'http://minio:9000')
-    os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+    # MLflow configuration (from Airflow Variables or environment)
+    MLFLOW_TRACKING_URI = get_config('MLFLOW_TRACKING_URI', 'http://mlflow_server:5000')
     
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    # Prepare environment variables for training script
+    train_env = os.environ.copy()
+    train_env['MLFLOW_TRACKING_URI'] = MLFLOW_TRACKING_URI
+    train_env['AWS_ACCESS_KEY_ID'] = get_config('AWS_ACCESS_KEY_ID', 'minio_admin')
+    train_env['AWS_SECRET_ACCESS_KEY'] = get_config('AWS_SECRET_ACCESS_KEY', 'minio_password123')
+    train_env['MLFLOW_S3_ENDPOINT_URL'] = get_config('MINIO_ENDPOINT', 'http://minio:9000')
+    train_env['AWS_DEFAULT_REGION'] = 'us-east-1'
     
-    experiment_name = cfg['logging']['project']
-    mlflow.set_experiment(experiment_name)
+    # Path to training script
+    training_script = '/opt/airflow/training_pipeline/src/train.py'
+    student_weights = '/opt/airflow/training_pipeline/src/yolo26n.pt'
     
-    # Enable MLflow in Ultralytics
-    from ultralytics import settings as ultra_settings
-    ultra_settings.update({"mlflow": True})
+    # Build command to run training script (use -u for unbuffered output)
+    cmd = [
+        'python',
+        '-u',  # Unbuffered output for real-time logging
+        training_script,
+        train_config,
+        '--teacher-weights', teacher_weights,
+        '--student-weights', student_weights,
+        '--data', data_yaml,
+        '--mlflow-tracking-uri', MLFLOW_TRACKING_URI,
+        '--mlflow-experiment', cfg['logging']['project'],
+        '--mlflow-run-name', cfg['logging']['name'],
+    ]
     
-    # Load student model
-    print(f"🎓 Initializing student model: yolo11n.pt")
-    student_model = YOLO('yolo11n.pt')
+    print(f"🎓 Training Configuration:")
+    print(f"   Teacher model: {teacher_weights}")
+    print(f"   Student model: {student_weights}")
+    print(f"   Data: {data_yaml}")
+    print(f"   Config: {train_config}")
+    print(f"   Epochs: {cfg['training']['epochs']}")
+    print(f"   Batch size: {cfg['training']['batch']}")
+    print(f"   Device: {cfg['training']['device']}")
+    print(f"   Data version: {data_version}")
+    print(f"   Method: Knowledge Distillation")
+    print(f"\n📜 Running command:")
+    print(f"   {' '.join(cmd)}")
     
-    # Note: Teacher model downloaded but not used in standard Ultralytics training
-    # Knowledge distillation is not supported via train() parameters in Ultralytics
-    print(f"ℹ️  Teacher model available at: {teacher_weights} (for reference)")
-    
-    run_name = cfg['logging']['name']
-    
-    # Start MLflow run
-    with mlflow.start_run(run_name=run_name) as run:
-        # Log parameters (including data version for reproducibility)
-        mlflow.log_params({
-            'data_version': data_version,  # Track which data version was used
-            'model_weights': 'yolo11n.pt',
-            'data_yaml': data_yaml,
-            'epochs': cfg['training']['epochs'],
-            'imgsz': cfg['training']['imgsz'],
-            'batch': cfg['training']['batch'],
-            'optimizer': cfg['optimization']['optimizer'],
-            'lr0': cfg['optimization']['lr0'],
-            'seed': cfg['training']['seed'],
-        })
-        # Note: Not logging distillation config as it's not used in training
-        
-        print(f"🏋️  Training student model...")
-        print(f"   Epochs: {cfg['training']['epochs']}")
-        print(f"   Batch size: {cfg['training']['batch']}")
-        print(f"   Device: {cfg['training']['device']}")
-        print(f"   Note: Using standard training (distillation not supported in Ultralytics CLI)")
-        
-        # Train student model (standard training without distillation)
-        results = student_model.train(
-            data=data_yaml,
-            epochs=cfg['training']['epochs'],
-            imgsz=cfg['training']['imgsz'],
-            batch=cfg['training']['batch'],
-            device=cfg['training']['device'],
-            workers=cfg['training']['workers'],
-            seed=cfg['training']['seed'],
-            deterministic=cfg['training']['deterministic'],
-            optimizer=cfg['optimization']['optimizer'],
-            lr0=cfg['optimization']['lr0'],
-            warmup_epochs=cfg['optimization']['warmup_epochs'],
-            mosaic=cfg['augmentation']['mosaic'],
-            close_mosaic=cfg['augmentation']['close_mosaic'],
-            project=cfg['logging']['project'],
-            name=cfg['logging']['name'],
-            save=cfg['logging']['save'],
-            save_period=cfg['logging']['save_period'],
-            plots=cfg['logging']['plots'],
-        )
-        
-        print("✅ Training completed!")
-        
-        # Log artifacts
-        save_dir = Path(results.save_dir) if hasattr(results, 'save_dir') else None
-        if save_dir and save_dir.exists():
-            best_pt = save_dir / 'weights' / 'best.pt'
-            last_pt = save_dir / 'weights' / 'last.pt'
-            
-            if best_pt.exists():
-                print(f"📦 Logging best model weights...")
-                mlflow.log_artifact(str(best_pt), artifact_path='weights')
-            
-            if last_pt.exists():
-                mlflow.log_artifact(str(last_pt), artifact_path='weights')
-            
-            # Log training plots and results
-            for ext in ('*.png', '*.csv'):
-                for f in save_dir.glob(ext):
-                    mlflow.log_artifact(str(f), artifact_path='results')
-        
-        # Register model to MLflow Model Registry
-        if save_dir and (save_dir / 'weights' / 'best.pt').exists():
-            print("\n📦 Registering model to MLflow Model Registry...")
-            
-            model_name = cfg['logging']['model_name']
-            model_uri = f"runs:/{run.info.run_id}/weights/best.pt"
-            
-            try:
-                model_version = mlflow.register_model(
-                    model_uri=model_uri,
-                    name=model_name,
-                    tags={
-                        "training_date": datetime.now().isoformat(),
-                        "framework": "ultralytics",
-                        "model_type": "yolo11n",
-                        "training_method": "standard"
-                    }
-                )
-                
-                print(f"✅ Model registered: {model_name} version {model_version.version}")
-                
-                # Transition to Staging
-                from mlflow.tracking import MlflowClient
-                client = MlflowClient()
-                client.transition_model_version_stage(
-                    name=model_name,
-                    version=model_version.version,
-                    stage="Staging"
-                )
-                
-                print(f"🎯 Model transitioned to Staging stage")
-                
-                # Push model info to XCom
-                context['task_instance'].xcom_push(key='model_name', value=model_name)
-                context['task_instance'].xcom_push(key='model_version', value=model_version.version)
-                context['task_instance'].xcom_push(key='run_id', value=run.info.run_id)
-                
-            except Exception as e:
-                print(f"⚠️  Warning: Could not register model: {e}")
-        
-        return run.info.run_id
-
-
-def upload_model_to_minio(**context):
-    """
-    Upload trained model to MinIO for backup and versioning.
-    """
-    import boto3
-    from botocore.client import Config
-    from pathlib import Path
-    import os
-    
-    print("☁️  Uploading trained model to MinIO...")
-    
-    # Get model info from previous task
-    model_name = context['task_instance'].xcom_pull(task_ids='train_model', key='model_name')
-    model_version = context['task_instance'].xcom_pull(task_ids='train_model', key='model_version')
-    run_id = context['task_instance'].xcom_pull(task_ids='train_model', key='run_id')
-    
-    if not all([model_name, model_version, run_id]):
-        print("⚠️  Missing model information, skipping MinIO upload")
-        return
-    
-    # MinIO configuration
-    MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'http://minio:9000')
-    MINIO_ACCESS_KEY = os.getenv('AWS_ACCESS_KEY_ID', 'minio_admin')
-    MINIO_SECRET_KEY = os.getenv('AWS_SECRET_ACCESS_KEY', 'minio_password123')
-    BUCKET_NAME = 'model-exports'
-    
-    s3_client = boto3.client(
-        's3',
-        endpoint_url=MINIO_ENDPOINT,
-        aws_access_key_id=MINIO_ACCESS_KEY,
-        aws_secret_access_key=MINIO_SECRET_KEY,
-        config=Config(signature_version='s3v4'),
-        region_name='us-east-1'
-    )
-    
-    # Find the trained model file (from MLflow artifacts)
-    # Typically stored in /tmp or working directory
-    model_path = Path(f"yolo-distillation/training_*").glob('weights/best.pt')
-    model_files = list(model_path)
-    
-    if not model_files:
-        print("⚠️  Could not find trained model file")
-        return
-    
-    model_file = model_files[0]
-    
-    # Upload to MinIO
-    s3_key = f"trained_models/{model_name}/v{model_version}/best.pt"
+    # Execute training script with real-time output streaming
+    print("\n📝 Training Output (streaming):")
+    print("-" * 80)
     
     try:
-        s3_client.upload_file(
-            str(model_file),
-            BUCKET_NAME,
-            s3_key
+        # Use Popen to stream output in real-time
+        process = subprocess.Popen(
+            cmd,
+            env=train_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Merge stderr into stdout
+            text=True,
+            bufsize=1,  # Line buffered
+            universal_newlines=True
         )
-        print(f"✅ Uploaded model to MinIO: s3://{BUCKET_NAME}/{s3_key}")
+        
+        # Stream output line by line
+        for line in process.stdout:
+            print(line, end='', flush=True)
+        
+        # Wait for process to complete
+        return_code = process.wait()
+        
+        if return_code != 0:
+            raise subprocess.CalledProcessError(return_code, cmd)
+        
+        print("-" * 80)
+        print("\n✅ Knowledge Distillation training completed successfully!")
+        
+    except subprocess.CalledProcessError as e:
+        print(f"\n❌ Training failed with exit code {e.returncode}")
+        raise
     except Exception as e:
-        print(f"⚠️  Warning: Could not upload to MinIO: {e}")
+        print(f"\n❌ Unexpected error during training: {e}")
+        raise
+    
+    # Connect to MLflow to get the run information
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    client = MlflowClient()
+    
+    # Find the most recent run in the experiment
+    experiment = mlflow.get_experiment_by_name(cfg['logging']['project'])
+    if experiment:
+        runs = client.search_runs(
+            experiment_ids=[experiment.experiment_id],
+            order_by=["start_time DESC"],
+            max_results=1
+        )
+        
+        if runs:
+            run = runs[0]
+            run_id = run.info.run_id
+            
+            print(f"\n📊 MLflow Run Information:")
+            print(f"   Run ID: {run_id}")
+            print(f"   Experiment: {cfg['logging']['project']}")
+            
+            # Get model from MLflow Model Registry
+            model_name = cfg['logging']['model_name']
+            
+            # Get the latest version of the model
+            try:
+                model_versions = client.search_model_versions(f"name='{model_name}'")
+                if model_versions:
+                    # Sort by version number descending
+                    latest_version = max(model_versions, key=lambda v: int(v.version))
+                    model_version = latest_version.version
+                    
+                    print(f"\n📦 Model Registry Information:")
+                    print(f"   Model: {model_name}")
+                    print(f"   Version: {model_version}")
+                    print(f"   Stage: {latest_version.current_stage}")
+                    
+                    # Push model info to XCom
+                    context['task_instance'].xcom_push(key='model_name', value=model_name)
+                    context['task_instance'].xcom_push(key='model_version', value=model_version)
+                    context['task_instance'].xcom_push(key='run_id', value=run_id)
+                else:
+                    print(f"⚠️  No model versions found for {model_name}")
+                    raise Exception(f"Model {model_name} not found in registry")
+                    
+            except Exception as e:
+                print(f"⚠️  Error retrieving model information: {e}")
+                raise
+            
+            return run_id
+        else:
+            print("⚠️  No runs found in experiment")
+            raise Exception("Training run not found in MLflow")
+    else:
+        print(f"⚠️  Experiment {cfg['logging']['project']} not found")
+        raise Exception(f"MLflow experiment not found")
 
 
 def evaluate_model_performance(**context):
@@ -603,12 +677,12 @@ def evaluate_model_performance(**context):
     run_id = context['task_instance'].xcom_pull(task_ids='train_model', key='run_id')
     data_yaml = context['task_instance'].xcom_pull(task_ids='prepare_data_yaml', key='data_yaml')
     
-    # MLflow configuration
-    MLFLOW_TRACKING_URI = os.getenv('MLFLOW_TRACKING_URI', 'http://mlflow_server:5000')
+    # MLflow configuration (from Airflow Variables or environment)
+    MLFLOW_TRACKING_URI = get_config('MLFLOW_TRACKING_URI', 'http://mlflow_server:5000')
     os.environ['MLFLOW_TRACKING_URI'] = MLFLOW_TRACKING_URI
-    os.environ['AWS_ACCESS_KEY_ID'] = os.getenv('AWS_ACCESS_KEY_ID', 'minio_admin')
-    os.environ['AWS_SECRET_ACCESS_KEY'] = os.getenv('AWS_SECRET_ACCESS_KEY', 'minio_password123')
-    os.environ['MLFLOW_S3_ENDPOINT_URL'] = os.getenv('MINIO_ENDPOINT', 'http://minio:9000')
+    os.environ['AWS_ACCESS_KEY_ID'] = get_config('AWS_ACCESS_KEY_ID', 'minio_admin')
+    os.environ['AWS_SECRET_ACCESS_KEY'] = get_config('AWS_SECRET_ACCESS_KEY', 'minio_password123')
+    os.environ['MLFLOW_S3_ENDPOINT_URL'] = get_config('MINIO_ENDPOINT', 'http://minio:9000')
     os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
     
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
@@ -616,6 +690,9 @@ def evaluate_model_performance(**context):
     
     # Download model from MLflow run artifacts (more reliable than registered model)
     model_uri = f"runs:/{run_id}/weights/best.pt"
+    
+    # Use mlflow.artifacts API (MLflow 2.x)
+    import mlflow.artifacts
     model_path = mlflow.artifacts.download_artifacts(artifact_uri=model_uri)
     
     print(f"📥 Downloaded model from: {model_uri}")
@@ -673,17 +750,17 @@ def promote_to_production(**context):
     model_version = context['task_instance'].xcom_pull(task_ids='train_model', key='model_version')
     metrics = context['task_instance'].xcom_pull(task_ids='evaluate_model_performance', key='val_metrics')
     
-    # MLflow configuration
-    MLFLOW_TRACKING_URI = os.getenv('MLFLOW_TRACKING_URI', 'http://mlflow_server:5000')
+    # MLflow configuration (from Airflow Variables or environment)
+    MLFLOW_TRACKING_URI = get_config('MLFLOW_TRACKING_URI', 'http://mlflow_server:5000')
     os.environ['MLFLOW_TRACKING_URI'] = MLFLOW_TRACKING_URI
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     client = MlflowClient()
     
-    # Performance thresholds (configurable via environment variables)
-    threshold_map50 = float(os.getenv('PROMOTION_MAP50_THRESHOLD', '0.5'))  # Default: 50% mAP@0.5
-    threshold_map50_95 = float(os.getenv('PROMOTION_MAP50_95_THRESHOLD', '0.3'))  # Default: 30% mAP@0.5:0.95
-    threshold_precision = float(os.getenv('PROMOTION_PRECISION_THRESHOLD', '0.4'))  # Default: 40% precision
-    threshold_recall = float(os.getenv('PROMOTION_RECALL_THRESHOLD', '0.4'))  # Default: 40% recall
+    # Performance thresholds (from Airflow Variables or environment)
+    threshold_map50 = float(get_config('PROMOTION_MAP50_THRESHOLD', '0.5'))  # Default: 50% mAP@0.5
+    threshold_map50_95 = float(get_config('PROMOTION_MAP50_95_THRESHOLD', '0.3'))  # Default: 30% mAP@0.5:0.95
+    threshold_precision = float(get_config('PROMOTION_PRECISION_THRESHOLD', '0.4'))  # Default: 40% precision
+    threshold_recall = float(get_config('PROMOTION_RECALL_THRESHOLD', '0.4'))  # Default: 40% recall
     
     print("\n📋 Performance Thresholds:")
     print(f"   mAP@0.5:      >= {threshold_map50:.2f}")
@@ -714,24 +791,15 @@ def promote_to_production(**context):
     if passes_all:
         print("\n🚀 Model passes all thresholds! Promoting to Production...")
         
-        # Set alias to Production
+        # Set alias to Production (modern approach)
         client.set_registered_model_alias(
             name=model_name,
             alias="production",
             version=model_version
         )
         
-        # Also transition stage to Production (legacy method)
-        client.transition_model_version_stage(
-            name=model_name,
-            version=model_version,
-            stage="Production",
-            archive_existing_versions=True  # Move old Production models to Archived
-        )
-        
         print(f"✅ Model {model_name} version {model_version} promoted to Production!")
         print(f"   Alias: production")
-        print(f"   Stage: Production")
         
         # Push promotion status to XCom
         context['task_instance'].xcom_push(key='promoted', value=True)
@@ -857,34 +925,28 @@ with DAG(
     train = PythonOperator(
         task_id='train_model',
         python_callable=train_model,
-        execution_timeout=timedelta(hours=6),  # Allow up to 6 hours for training
+        execution_timeout=timedelta(hours=12),  # Allow up to 12 hours for training (KD can take longer)
     )
     
-    # Task 6: Upload model to MinIO
-    upload_to_minio = PythonOperator(
-        task_id='upload_model_to_minio',
-        python_callable=upload_model_to_minio,
-    )
-    
-    # Task 7: Evaluate model performance
+    # Task 6: Evaluate model performance
     evaluate = PythonOperator(
         task_id='evaluate_model_performance',
         python_callable=evaluate_model_performance,
     )
     
-    # Task 8: Promote to production if passing criteria
+    # Task 7: Promote to production if passing criteria
     promote = PythonOperator(
         task_id='promote_to_production',
         python_callable=promote_to_production,
     )
     
-    # Task 9: Send notification
+    # Task 8: Send notification
     notify = PythonOperator(
         task_id='send_training_notification',
         python_callable=send_training_notification,
     )
     
-    # Task 10: Trigger TensorRT conversion for promoted model
+    # Task 9: Trigger TensorRT conversion for promoted model
     trigger_tensorrt = TriggerDagRunOperator(
         task_id='trigger_tensorrt_conversion',
         trigger_dag_id='convert_tensorrt',
@@ -901,4 +963,4 @@ with DAG(
     fetch_teacher >> train
     prepare_yaml >> train
     prepare_config >> train
-    train >> upload_to_minio >> evaluate >> promote >> notify >> trigger_tensorrt
+    train >> evaluate >> promote >> notify >> trigger_tensorrt

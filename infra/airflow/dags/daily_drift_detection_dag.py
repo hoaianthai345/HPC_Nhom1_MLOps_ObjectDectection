@@ -24,6 +24,37 @@ The triggered training DAG receives configuration via `conf` parameter:
 
 The training DAG can access this via: context['dag_run'].conf
 
+Configuration (via Airflow Variables or Environment Variables):
+Priority: Airflow Variable > Environment Variable > Default
+
+MinIO/Storage:
+- MINIO_ENDPOINT (default: 'http://minio:9000')
+- AWS_ACCESS_KEY_ID (default: 'minio_admin')
+- AWS_SECRET_ACCESS_KEY (default: 'minio_password123')
+- TRAINING_DATA_BUCKET (default: 'training-data')
+- TRAINING_DATA_VERSION (default: 'v1.0')
+- TRAINING_DATA_PREFIX (default: '{version}/train/' - uses TRAINING_DATA_VERSION)
+- PRODUCTION_DATA_BUCKET (default: 'production-data')
+- PRODUCTION_DATA_PREFIX (default: '' - empty downloads all, or specify date like '2026-02-20/')
+- REPORTS_BUCKET (default: 'drift-reports')
+
+MLflow:
+- MLFLOW_TRACKING_URI (default: 'http://mlflow_server:5000')
+
+Teacher Model:
+- TEACHER_MODEL_NAME (default: 'yolo-teacher-model')
+- TEACHER_MODEL_ALIAS (default: 'production')
+- TEACHER_MODEL_VERSION (optional: specific version number)
+
+Drift Detection:
+- MIN_DRIFT_SAMPLES (default: 50)
+
+To set Airflow Variables via UI:
+Admin > Variables > Add
+Or via CLI:
+airflow variables set TEACHER_MODEL_NAME my-teacher-model
+airflow variables set MIN_DRIFT_SAMPLES 100
+
 Schedule: After batch inference or manually
 """
 from datetime import datetime, timedelta
@@ -31,8 +62,29 @@ import tempfile
 import os
 
 from airflow import DAG
+from airflow.sdk import Variable
 from airflow.providers.standard.operators.python import PythonOperator, BranchPythonOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
+
+
+def get_config(key: str, default=None):
+    """
+    Get configuration value from Airflow Variable with fallback to environment variable.
+    Priority: Airflow Variable > Environment Variable > Default value
+    
+    Args:
+        key: Configuration key name
+        default: Default value if not found in Variable or environment
+        
+    Returns:
+        Configuration value
+    """
+    try:
+        # Try to get from Airflow Variable first (raises exception if not found)
+        return Variable.get(key)
+    except Exception:
+        # Fall back to environment variable if Variable not found or any error occurs
+        return os.getenv(key, default)
 
 
 default_args = {
@@ -50,9 +102,9 @@ def _get_minio_client():
     import boto3
     from botocore.client import Config
     
-    endpoint = os.getenv("MINIO_ENDPOINT", "http://minio:9000")
-    access_key = os.getenv("AWS_ACCESS_KEY_ID", "minio_admin")
-    secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", "minio_password123")
+    endpoint = get_config("MINIO_ENDPOINT", "http://minio:9000")
+    access_key = get_config("AWS_ACCESS_KEY_ID", "minio_admin")
+    secret_key = get_config("AWS_SECRET_ACCESS_KEY", "minio_password123")
     
     client = boto3.client(
         's3',
@@ -105,8 +157,9 @@ def download_training_data(**context):
     import os
     from pathlib import Path
     
-    training_bucket = os.getenv("TRAINING_DATA_BUCKET", "training-data")
-    training_prefix = os.getenv("TRAINING_DATA_PREFIX", "train/")
+    training_bucket = get_config("TRAINING_DATA_BUCKET", "training-data")
+    training_version = get_config("TRAINING_DATA_VERSION", "v1.0")
+    training_prefix = get_config("TRAINING_DATA_PREFIX", f"{training_version}/train/")
     
     s3_client = _get_minio_client()
     
@@ -125,6 +178,24 @@ def download_training_data(**context):
         )
         print(f"✅ Downloaded {file_count} training files")
         
+        # Debug: Show what was downloaded
+        if file_count == 0:
+            print(f"⚠️  Warning: No files were downloaded from {training_bucket}/{training_prefix}")
+            print(f"   Please check if the bucket and prefix are correct")
+        else:
+            print(f"\n📂 Downloaded structure:")
+            import os
+            for root, dirs, files in os.walk(temp_dir):
+                level = root.replace(str(temp_dir), '').count(os.sep)
+                indent = ' ' * 2 * level
+                print(f'{indent}{os.path.basename(root)}/')
+                if level < 2:  # Show first 2 levels
+                    subindent = ' ' * 2 * (level + 1)
+                    for d in dirs[:3]:
+                        print(f'{subindent}{d}/')
+                    for f in files[:3]:
+                        print(f'{subindent}{f}')
+        
         # Push to XCom
         context['task_instance'].xcom_push(key='train_data_dir', value=str(temp_dir))
         
@@ -138,7 +209,8 @@ def download_production_data(**context):
     import os
     from pathlib import Path
     
-    production_bucket = os.getenv("PRODUCTION_DATA_BUCKET", "production-data")
+    production_bucket = get_config("PRODUCTION_DATA_BUCKET", "production-data")
+    production_prefix = get_config("PRODUCTION_DATA_PREFIX", "")  # Empty = all data, or specify date like '2026-02-20/'
     
     s3_client = _get_minio_client()
     
@@ -148,30 +220,72 @@ def download_production_data(**context):
     
     print(f"📥 Downloading production data from MinIO...")
     print(f"   Bucket: {production_bucket}")
+    print(f"   Prefix: {production_prefix or '(all)'}")
     print(f"   Local: {local_prod_dir}")
     
     try:
-        # Download images
-        images_count = _download_s3_folder(
-            s3_client, production_bucket, "images/", str(local_prod_dir / "images")
+        # Download all files from the production bucket/prefix
+        raw_dir = local_prod_dir / "raw"
+        total_count = _download_s3_folder(
+            s3_client, production_bucket, production_prefix, str(raw_dir)
         )
         
-        # Download student predictions (saved by serving API)
-        student_preds_count = _download_s3_folder(
-            s3_client, production_bucket, "predictions/", str(local_prod_dir / "predictions_student")
-        )
+        print(f"✅ Downloaded {total_count} files")
         
-        # Download labels if they exist (optional)
-        try:
-            labels_count = _download_s3_folder(
-                s3_client, production_bucket, "labels/", str(local_prod_dir / "labels")
-            )
-            print(f"✅ Downloaded {images_count} images, {student_preds_count} student predictions, {labels_count} labels")
-        except:
-            print(f"✅ Downloaded {images_count} images, {student_preds_count} student predictions (no labels)")
+        if total_count == 0:
+            print(f"⚠️  Warning: No files found in {production_bucket}/{production_prefix}")
+            context['task_instance'].xcom_push(key='skip_drift', value=True)
+            context['task_instance'].xcom_push(key='production_data_dir', value=str(temp_dir))
+            return
+        
+        # Organize files by extension into images/ and labels/ directories
+        images_dir = local_prod_dir / "images"
+        labels_dir = local_prod_dir / "labels"
+        images_dir.mkdir(parents=True, exist_ok=True)
+        labels_dir.mkdir(parents=True, exist_ok=True)
+        
+        image_extensions = {'.jpg', '.jpeg', '.png', '.bmp'}
+        label_extensions = {'.txt'}
+        
+        images_count = 0
+        labels_count = 0
+        
+        # Walk through downloaded files and organize them
+        for root, dirs, files in os.walk(raw_dir):
+            for file in files:
+                file_path = Path(root) / file
+                file_ext = file_path.suffix.lower()
+                
+                if file_ext in image_extensions:
+                    # Copy image to images directory
+                    import shutil
+                    shutil.copy(str(file_path), str(images_dir / file))
+                    images_count += 1
+                elif file_ext in label_extensions:
+                    # Copy label to labels directory
+                    import shutil
+                    shutil.copy(str(file_path), str(labels_dir / file))
+                    labels_count += 1
+        
+        print(f"📁 Organized: {images_count} images, {labels_count} labels")
+        
+        # Debug: Show what was organized
+        print(f"\n📂 Production data structure:")
+        for root, dirs, files in os.walk(local_prod_dir):
+            level = root.replace(str(local_prod_dir), '').count(os.sep)
+            indent = ' ' * 2 * level
+            print(f'{indent}{os.path.basename(root)}/')
+            if level < 2:  # Show first 2 levels
+                subindent = ' ' * 2 * (level + 1)
+                for d in dirs[:3]:
+                    print(f'{subindent}{d}/')
+                for f in files[:5]:
+                    print(f'{subindent}{f}')
+                if len(files) > 5:
+                    print(f'{subindent}... and {len(files) - 5} more')
         
         # Check minimum samples
-        min_samples = int(os.getenv("MIN_DRIFT_SAMPLES", "50"))
+        min_samples = int(get_config("MIN_DRIFT_SAMPLES", "50"))
         if images_count < min_samples:
             print(f"⚠️  Not enough production samples ({images_count} < {min_samples})")
             context['task_instance'].xcom_push(key='skip_drift', value=True)
@@ -180,10 +294,13 @@ def download_production_data(**context):
         
         # Push to XCom
         context['task_instance'].xcom_push(key='production_data_dir', value=str(temp_dir))
-        context['task_instance'].xcom_push(key='student_predictions_dir', value=str(local_prod_dir / "predictions_student"))
+        # Note: Student predictions would be separate if serving API saves them
+        context['task_instance'].xcom_push(key='student_predictions_dir', value=str(labels_dir))  # Using labels as predictions for now
         
     except Exception as e:
         print(f"❌ Error downloading production data: {e}")
+        import traceback
+        traceback.print_exc()
         raise
 
 
@@ -193,40 +310,121 @@ def download_teacher_model_from_mlflow(**context):
     import mlflow
     from pathlib import Path
     
-    mlflow_uri = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow_server:5000")
+    mlflow_uri = get_config("MLFLOW_TRACKING_URI", "http://mlflow_server:5000")
     mlflow.set_tracking_uri(mlflow_uri)
     
-    # Model configuration
-    teacher_model_name = os.getenv("TEACHER_MODEL_NAME", "yolo-teacher-model")
-    teacher_model_stage = os.getenv("TEACHER_MODEL_STAGE", "Production")
+    # Configure AWS/MinIO credentials for MLflow artifact storage
+    os.environ['AWS_ACCESS_KEY_ID'] = get_config('AWS_ACCESS_KEY_ID', 'minio_admin')
+    os.environ['AWS_SECRET_ACCESS_KEY'] = get_config('AWS_SECRET_ACCESS_KEY', 'minio_password123')
+    os.environ['MLFLOW_S3_ENDPOINT_URL'] = get_config('MINIO_ENDPOINT', 'http://minio:9000')
+    os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+    
+    # Model configuration - use alias instead of deprecated stages
+    teacher_model_name = get_config("TEACHER_MODEL_NAME", "yolo-teacher-model")
+    # Support both alias (modern) and version (fallback)
+    teacher_model_alias = get_config("TEACHER_MODEL_ALIAS", "production")
+    teacher_model_version = get_config("TEACHER_MODEL_VERSION", None)
     
     temp_dir = tempfile.mkdtemp(prefix="teacher_model_")
+    teacher_local_path = Path(temp_dir) / "teacher" / "best.pt"
+    teacher_local_path.parent.mkdir(parents=True, exist_ok=True)
     
     print(f"📥 Downloading Teacher model from MLflow...")
     print(f"   MLflow URI: {mlflow_uri}")
-    print(f"   Teacher: {teacher_model_name} ({teacher_model_stage})")
+    print(f"   Model Name: {teacher_model_name}")
+    print(f"   Alias: {teacher_model_alias}")
     print(f"   Note: Student predictions already downloaded from serving API")
     
     try:
-        # Download teacher model
-        teacher_model_uri = f"models:/{teacher_model_name}/{teacher_model_stage}"
-        teacher_local_path = Path(temp_dir) / "teacher" / "best.pt"
-        teacher_local_path.parent.mkdir(parents=True, exist_ok=True)
+        # Use MlflowClient to get model version by alias (modern approach)
+        from mlflow.tracking import MlflowClient
+        import shutil
         
-        print(f"Downloading teacher model...")
-        teacher_model_path = mlflow.artifacts.download_artifacts(
-            artifact_uri=teacher_model_uri,
-            dst_path=str(teacher_local_path.parent)
-        )
+        client = MlflowClient()
         
-        print(f"✅ Teacher model downloaded successfully")
+        # Get model version by alias or use specific version
+        if teacher_model_version:
+            print(f"📥 Using specified version: {teacher_model_version}")
+            model_version = client.get_model_version(teacher_model_name, teacher_model_version)
+        else:
+            print(f"📥 Fetching model version with alias '{teacher_model_alias}'...")
+            model_version = client.get_model_version_by_alias(teacher_model_name, teacher_model_alias)
+        
+        version_number = model_version.version
+        run_id = model_version.run_id
+        
+        print(f"✓ Found model version: {version_number}")
+        print(f"✓ Run ID: {run_id}")
+        
+        # Try common paths where YOLO models might be stored
+        artifact_paths = ['weights/best.pt', 'model/best.pt', 'best.pt']
+        downloaded_path = None
+        
+        for artifact_path in artifact_paths:
+            try:
+                teacher_model_uri = f"runs:/{run_id}/{artifact_path}"
+                print(f"📥 Trying to download from: {artifact_path}")
+                
+                downloaded_path = mlflow.artifacts.download_artifacts(
+                    artifact_uri=teacher_model_uri,
+                    dst_path=str(teacher_local_path.parent)
+                )
+                print(f"✅ Successfully downloaded from {artifact_path}")
+                break
+            except Exception as e:
+                print(f"   ✗ Not found at {artifact_path}")
+                continue
+        
+        if not downloaded_path:
+            raise FileNotFoundError(
+                f"Could not find teacher model in any of the expected paths: {artifact_paths}"
+            )
+        
+        # Handle the downloaded file
+        downloaded_path_obj = Path(downloaded_path)
+        
+        # If it's already the .pt file at target location, we're done
+        if downloaded_path_obj.resolve() == teacher_local_path.resolve():
+            print(f"✅ Model already at target location: {teacher_local_path}")
+            final_model_path = str(teacher_local_path)
+        elif downloaded_path_obj.is_file() and downloaded_path_obj.suffix == '.pt':
+            # It's a .pt file but not at target, copy it
+            shutil.copy(str(downloaded_path_obj), str(teacher_local_path))
+            print(f"📁 Copied model file to: {teacher_local_path}")
+            final_model_path = str(teacher_local_path)
+        else:
+            # If it's a directory, look for .pt files
+            pt_files = list(downloaded_path_obj.rglob('*.pt'))
+            
+            if pt_files:
+                # Use the first .pt file found (or best.pt if it exists)
+                best_pt = None
+                for pt_file in pt_files:
+                    if pt_file.name == 'best.pt':
+                        best_pt = pt_file
+                        break
+                
+                source_pt = best_pt if best_pt else pt_files[0]
+                shutil.copy(str(source_pt), str(teacher_local_path))
+                print(f"📁 Copied {source_pt.name} to: {teacher_local_path}")
+                final_model_path = str(teacher_local_path)
+            else:
+                raise FileNotFoundError(f"No .pt files found in {downloaded_path_obj}")
+        
+        print(f"✅ Teacher model ready at: {final_model_path}")
         
         # Push to XCom
-        context['task_instance'].xcom_push(key='teacher_model_path', value=teacher_model_path)
+        context['task_instance'].xcom_push(key='teacher_model_path', value=final_model_path)
         context['task_instance'].xcom_push(key='models_dir', value=temp_dir)
         
     except Exception as e:
-        print(f"❌ Error downloading models: {e}")
+        print(f"❌ Error downloading teacher model: {e}")
+        print(f"\nTroubleshooting:")
+        print(f"  1. Check if model '{teacher_model_name}' exists in MLflow")
+        print(f"  2. If using alias, verify alias '{teacher_model_alias}' is set on a model version")
+        print(f"  3. If using version, verify version exists")
+        print(f"  4. Verify the model artifacts were logged correctly to MLflow")
+        print(f"\nYou can set the model version explicitly with TEACHER_MODEL_VERSION env var")
         import traceback
         traceback.print_exc()
         raise
@@ -330,6 +528,24 @@ def run_data_drift_detection(**context):
     print(f"   Training data: {train_data_dir}")
     print(f"   Production data: {production_data_dir}")
     
+    # Debug: Check what's actually in the directories
+    print(f"\n🔍 Checking downloaded data structure:")
+    if train_data_dir.exists():
+        print(f"   Train data dir exists: {train_data_dir}")
+        import os
+        for root, dirs, files in os.walk(train_data_dir):
+            level = root.replace(str(train_data_dir), '').count(os.sep)
+            indent = ' ' * 2 * level
+            print(f'{indent}{os.path.basename(root)}/')
+            if level < 3:  # Limit depth to avoid too much output
+                subindent = ' ' * 2 * (level + 1)
+                for file in files[:5]:  # Show only first 5 files
+                    print(f'{subindent}{file}')
+                if len(files) > 5:
+                    print(f'{subindent}... and {len(files) - 5} more files')
+    else:
+        print(f"   ❌ Train data dir does not exist!")
+    
     try:
         # Import after sys.path modification
         from data_validation.drift_analysis import create_vision_data, extract_drift_metrics, DEFAULT_CLASSES, YOLOVisionData
@@ -340,13 +556,14 @@ def run_data_drift_detection(**context):
         import torch
         
         # Load training data
-        print("Loading training data...")
+        print("\n📥 Loading training data...")
         train_data = create_vision_data(
             data_dir=str(train_data_dir),
             split="train",
             batch_size=32,
             img_size=640,
-            max_samples=500
+            max_samples=500,
+            num_workers=0  # Airflow runs in daemon process, can't spawn workers
         )
         
         # Load production data
@@ -374,7 +591,8 @@ def run_data_drift_detection(**context):
         use_pin_memory = torch.cuda.is_available()
         prod_loader = DataLoader(
             prod_dataset, batch_size=32, shuffle=False,
-            num_workers=4, collate_fn=collate_fn, pin_memory=use_pin_memory
+            num_workers=0,  # Airflow runs in daemon process, can't spawn workers
+            collate_fn=collate_fn, pin_memory=use_pin_memory
         )
         
         prod_data = YOLOVisionData(
@@ -405,7 +623,7 @@ def run_data_drift_detection(**context):
         # Upload report to MinIO
         try:
             s3_client = _get_minio_client()
-            reports_bucket = os.getenv("REPORTS_BUCKET", "mlops-reports")
+            reports_bucket = get_config("REPORTS_BUCKET", "drift-reports")
             report_key = f"drift_detection/data_drift_report_{timestamp}.html"
             
             s3_client.upload_file(str(report_path), reports_bucket, report_key)
@@ -462,7 +680,8 @@ def run_prediction_drift_detection(**context):
             batch_size=32,
             img_size=640,
             max_samples=500,
-            open_browser=False
+            open_browser=False,
+            num_workers=0  # Airflow runs in daemon process, can't spawn workers
         )
         
         print(f"📈 Prediction Drift Status: {'PASSED' if result['passed'] else 'FAILED'}")
@@ -470,7 +689,7 @@ def run_prediction_drift_detection(**context):
         # Upload report to MinIO
         try:
             s3_client = _get_minio_client()
-            reports_bucket = os.getenv("REPORTS_BUCKET", "mlops-reports")
+            reports_bucket = get_config("REPORTS_BUCKET", "drift-reports")
             report_filename = Path(result['report_path']).name
             report_key = f"drift_detection/{report_filename}"
             
@@ -591,7 +810,7 @@ names: ['Hardhat', 'Mask', 'NO-Hardhat', 'NO-Mask', 'NO-Safety Vest']
         
         # Upload dataset to MinIO
         s3_client = _get_minio_client()
-        training_bucket = os.getenv("TRAINING_DATA_BUCKET", "training-data")
+        training_bucket = get_config("TRAINING_DATA_BUCKET", "training-data")
         dataset_prefix = f"retrain_{timestamp}/"
         
         print(f"☁️  Uploading retraining dataset to MinIO...")
@@ -693,7 +912,7 @@ with DAG(
         python_callable=prepare_retraining_dataset,
     )
     
-    # Task 10: Trigger retrain DAG with dataset configuration
+    # Task 10: Get retrain config for training DAG
     def _get_retrain_config(**context):
         """Get configuration for training DAG."""
         return {
@@ -715,19 +934,23 @@ with DAG(
             ),
         }
     
-    trigger_retrain = TriggerDagRunOperator(
-        task_id='trigger_retrain',
-        trigger_dag_id='train_model',
-        wait_for_completion=False,
-        conf="{{ ti.xcom_pull(task_ids='get_retrain_config') }}",
-    )
     
-    # Task 11: Get retrain config (helper task)
-    get_config = PythonOperator(
+    get_retrain_config_task = PythonOperator(
         task_id='get_retrain_config',
         python_callable=_get_retrain_config,
     )
+
+    # Task 11: Trigger retrain DAG with configuration from XCom
+
+    # def _trigger_training_dag(**context):   
+    #     """Trigger training DAG with configuration from XCom."""
+    #     pass
     
+    # trigger_retrain = PythonOperator(
+    #     task_id='trigger_retrain',
+    #     python_callable=_trigger_training_dag,
+    # )
+
     # Define task dependencies
     # Step 1: Download training data (from MinIO)
     # Step 2: Download production data + student predictions (from MinIO)
@@ -758,4 +981,4 @@ with DAG(
     [detect_data_drift, detect_pred_drift] >> check_threshold >> [skip, prepare_retrain]
     
     # Prepare retraining dataset (includes training data and teacher predictions on production data)
-    prepare_retrain >> get_config >> trigger_retrain
+    prepare_retrain >> get_retrain_config_task

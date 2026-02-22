@@ -12,15 +12,34 @@ This DAG:
 
 Schedule: Daily at 3 AM
 """
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
-import os
-
 from airflow import DAG
+from airflow.sdk import Variable
 from airflow.providers.standard.operators.python import PythonOperator, BranchPythonOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
-
 from minio_utils import MinIOClient
+
+
+def get_config(key: str, default=None):
+    """
+    Get configuration value from Airflow Variable with fallback to environment variable.
+    Priority: Airflow Variable > Environment Variable > Default value
+    
+    Args:
+        key: Configuration key name
+        default: Default value if not found in Variable or environment
+        
+    Returns:
+        Configuration value
+    """
+    try:
+        # Try to get from Airflow Variable first (raises exception if not found)
+        return Variable.get(key)
+    except Exception:
+        # Fall back to environment variable if Variable not found or any error occurs
+        return os.getenv(key, default)
 
 
 # Default arguments
@@ -94,13 +113,13 @@ def download_teacher_model(**context):
     from mlflow.tracking import MlflowClient
     
     # MLflow configuration
-    mlflow_uri = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+    mlflow_uri = get_config("MLFLOW_TRACKING_URI", "http://mlflow_server:5000")
     mlflow.set_tracking_uri(mlflow_uri)
     
     # AWS/MinIO configuration for artifact storage
-    os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID", "minio_admin")
-    os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY", "minio_password123")
-    os.environ["MLFLOW_S3_ENDPOINT_URL"] = os.getenv("MLFLOW_S3_ENDPOINT_URL", "http://minio:9000")
+    os.environ["AWS_ACCESS_KEY_ID"] = get_config("AWS_ACCESS_KEY_ID", "minio_admin")
+    os.environ["AWS_SECRET_ACCESS_KEY"] = get_config("AWS_SECRET_ACCESS_KEY", "minio_password123")
+    os.environ["MLFLOW_S3_ENDPOINT_URL"] = get_config("MLFLOW_S3_ENDPOINT_URL", "http://minio:9000")
     os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
     
     client = MlflowClient()
@@ -125,7 +144,7 @@ def download_teacher_model(**context):
             except Exception:
                 # Fallback to Production stage
                 versions = client.search_model_versions(f"name='{model_name}'")
-                production_models = [v for v in versions if v.current_stage == 'Production']
+                production_models = [v for v in versions if v.current_stage == 'production']
                 
                 if not production_models:
                     # Try any available version

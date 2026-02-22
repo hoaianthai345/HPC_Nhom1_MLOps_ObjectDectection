@@ -1,0 +1,107 @@
+# Alertmanager Configuration
+
+global:
+  resolve_timeout: 5m
+  
+  # SMTP configuration (example - configure for your email server)
+  # smtp_from: 'alertmanager@your-domain.com'
+  # smtp_smarthost: 'smtp.gmail.com:587'
+  # smtp_auth_username: 'your-email@gmail.com'
+  # smtp_auth_password: 'your-app-password'
+  # smtp_require_tls: true
+
+# Templates for notifications
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Route configuration
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'default'
+  
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'critical'
+      continue: true
+    
+    # Warning alerts - less urgent
+    - match:
+        severity: warning
+      receiver: 'warning'
+      continue: true
+    
+    # Data drift alerts - send to ML team
+    - match:
+        component: data_drift
+      receiver: 'ml-team'
+      continue: true
+    
+    # Training alerts
+    - match:
+        component: training
+      receiver: 'ml-team'
+      continue: true
+
+# Receivers configuration
+receivers:
+  - name: 'default'
+    webhook_configs:
+      - url: 'http://webhook-receiver:8080/alerts'
+        send_resolved: true
+  
+  - name: 'critical'
+    # Email notification
+    # email_configs:
+    #   - to: 'ops-team@your-domain.com'
+    #     subject: '[CRITICAL] {{ .GroupLabels.alertname }}'
+    #     html: '{{ template "email.default.html" . }}'
+    
+    # Slack notification (example)
+    # slack_configs:
+    #   - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+    #     channel: '#alerts-critical'
+    #     title: '{{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    
+    webhook_configs:
+      - url: 'http://webhook-receiver:8080/critical'
+        send_resolved: true
+  
+  - name: 'warning'
+    # email_configs:
+    #   - to: 'ops-team@your-domain.com'
+    #     subject: '[WARNING] {{ .GroupLabels.alertname }}'
+    
+    webhook_configs:
+      - url: 'http://webhook-receiver:8080/warning'
+        send_resolved: true
+  
+  - name: 'ml-team'
+    # email_configs:
+    #   - to: 'ml-team@your-domain.com'
+    #     subject: '[ML Alert] {{ .GroupLabels.alertname }}'
+    
+    webhook_configs:
+      - url: 'http://webhook-receiver:8080/ml-alerts'
+        send_resolved: true
+
+# Inhibit rules - prevent alert spam
+inhibit_rules:
+  # Inhibit warning if critical is firing
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'cluster', 'service']
+  
+  # Inhibit all alerts if service is down
+  - source_match:
+      alertname: 'ServiceDown'
+    target_match_re:
+      alertname: '.*'
+    equal: ['service']

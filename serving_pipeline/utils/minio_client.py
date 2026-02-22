@@ -3,6 +3,7 @@ MinIO client utilities for production data storage.
 """
 import io
 import logging
+import warnings
 from pathlib import Path
 from typing import Optional
 
@@ -11,6 +12,10 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 
 from ..config import settings
+
+# Suppress urllib3 header parsing warnings for MinIO compatibility
+warnings.filterwarnings('ignore', message='Failed to parse headers')
+logging.getLogger('urllib3.connection').setLevel(logging.ERROR)
 
 logger = logging.getLogger(__name__)
 

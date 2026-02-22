@@ -1,0 +1,256 @@
+# Prometheus Alert Rules for MLOps Pipeline
+
+groups:
+  - name: mlops_alerts
+    interval: 30s
+    rules:
+      # Data Drift Alerts
+      - alert: HighDataDrift
+        expr: data_drift_score{check="ImagePropertyDrift"} > 0.3
+        for: 5m
+        labels:
+          severity: warning
+          component: data_drift
+        annotations:
+          summary: "High data drift detected"
+          description: "Data drift score {{ $value }} exceeds threshold of 0.3 for {{ $labels.check }}"
+          
+      - alert: CriticalDataDrift
+        expr: data_drift_score{check="ImagePropertyDrift"} > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          component: data_drift
+        annotations:
+          summary: "Critical data drift detected"
+          description: "Data drift score {{ $value }} exceeds critical threshold of 0.5. Immediate retraining recommended."
+      
+      # Model Performance Alerts
+      - alert: HighInferenceLatency
+        expr: histogram_quantile(0.95, rate(yolo_inference_seconds_sum[5m]) / rate(yolo_inference_seconds_count[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: inference
+        annotations:
+          summary: "High inference latency detected"
+          description: "95th percentile inference time is {{ $value }}s, exceeding 0.5s threshold"
+      
+      - alert: LowInferenceRate
+        expr: rate(yolo_inference_seconds_count[5m]) < 0.1
+        for: 10m
+        labels:
+          severity: info
+          component: inference
+        annotations:
+          summary: "Low inference request rate"
+          description: "Inference rate is {{ $value }} requests/sec, which is unusually low"
+      
+      # Service Health Alerts - CPU API
+      - alert: ServingAPICPUDown
+        expr: up{job="serving_api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: service
+        annotations:
+          summary: "Serving API (CPU) is down"
+          description: "The serving API (CPU) service has been down for more than 1 minute"
+      
+      # Service Health Alerts - GPU API
+      - alert: ServingAPIGPUDown
+        expr: up{job="serving_api_gpu"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: service
+        annotations:
+          summary: "Serving API (GPU) is down"
+          description: "The serving API (GPU) service has been down for more than 1 minute"
+      
+      - alert: HighMemoryUsage
+        expr: service_ram_mb > 4096
+        for: 5m
+        labels:
+          severity: warning
+          component: resources
+        annotations:
+          summary: "High memory usage"
+          description: "Service {{ $labels.service }} is using {{ $value }}MB of RAM, exceeding 4GB threshold"
+      
+      - alert: HighGPUMemoryUsage
+        expr: gpu_memory_used_mb > 10240
+        for: 5m
+        labels:
+          severity: warning
+          component: resources
+        annotations:
+          summary: "High GPU memory usage"
+          description: "GPU {{ $labels.gpu_index }} is using {{ $value }}MB, exceeding 10GB threshold"
+      
+      - alert: CriticalGPUMemoryUsage
+        expr: gpu_memory_used_mb > 14336
+        for: 2m
+        labels:
+          severity: critical
+          component: resources
+        annotations:
+          summary: "Critical GPU memory usage"
+          description: "GPU {{ $labels.gpu_index }} is using {{ $value }}MB, exceeding 14GB threshold. Risk of OOM."
+      
+      # API Error Rate Alerts
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High API error rate"
+          description: "API error rate is {{ $value | humanizePercentage }}, exceeding 5% threshold on {{ $labels.service }}"
+      
+      - alert: CriticalErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.15
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Critical API error rate"
+          description: "API error rate is {{ $value | humanizePercentage }}, exceeding 15% threshold on {{ $labels.service }}"
+      
+      # API Response Time Alerts
+      - alert: HighAPIResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High API response time"
+          description: "95th percentile API response time is {{ $value }}s, exceeding 2s threshold"
+
+  - name: airflow_pipeline_alerts
+    interval: 1m
+    rules:
+      # Training Pipeline Alerts
+      - alert: TrainingJobFailed
+        expr: airflow_dag_run_duration{dag_id="train_model", state="failed"} > 0
+        for: 1m
+        labels:
+          severity: warning
+          component: training
+        annotations:
+          summary: "Training job failed"
+          description: "Model training pipeline (train_model) has failed"
+      
+      - alert: TrainingJobLongRunning
+        expr: airflow_dag_run_duration{dag_id="train_model", state="running"} > 7200
+        for: 5m
+        labels:
+          severity: warning
+          component: training
+        annotations:
+          summary: "Training job running too long"
+          description: "Model training has been running for over 2 hours"
+      
+      # Daily Inference Pipeline Alerts
+      - alert: DailyInferenceFailed
+        expr: time() - airflow_dag_last_success_timestamp{dag_id="daily_production_inference"} > 172800
+        for: 1h
+        labels:
+          severity: warning
+          component: batch_inference
+        annotations:
+          summary: "Daily inference hasn't run successfully"
+          description: "Daily production inference pipeline hasn't completed successfully in over 48 hours"
+      
+      # Drift Detection Pipeline Alerts
+      - alert: DriftDetectionFailed
+        expr: airflow_dag_run_duration{dag_id="drift_detection_pipeline", state="failed"} > 0
+        for: 1m
+        labels:
+          severity: warning
+          component: drift_detection
+        annotations:
+          summary: "Drift detection pipeline failed"
+          description: "Drift detection pipeline has failed. Data/prediction drift may not be monitored."
+      
+      # TensorRT Conversion Alerts
+      - alert: TensorRTConversionFailed
+        expr: airflow_dag_run_duration{dag_id="convert_tensorrt", state="failed"} > 0
+        for: 1m
+        labels:
+          severity: warning
+          component: tensorrt
+        annotations:
+          summary: "TensorRT conversion failed"
+          description: "TensorRT model conversion has failed. GPU inference may be degraded."
+      
+      - alert: TensorRTConversionStale
+        expr: time() - airflow_dag_last_success_timestamp{dag_id="convert_tensorrt"} > 604800
+        for: 1h
+        labels:
+          severity: info
+          component: tensorrt
+        annotations:
+          summary: "TensorRT conversion hasn't run"
+          description: "TensorRT conversion hasn't completed successfully in over 7 days"
+
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      # Prometheus itself
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: monitoring
+        annotations:
+          summary: "Prometheus is down"
+          description: "Prometheus monitoring service is unreachable"
+      
+      # Loki (Logging)
+      - alert: LokiDown
+        expr: up{job="loki"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: "Loki is down"
+          description: "Loki logging service has been down for 5 minutes"
+      
+      # Node Exporter
+      - alert: NodeExporterDown
+        expr: up{job="node_exporter"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: "Node Exporter is down"
+          description: "Node exporter metrics are unavailable"
+      
+      # DCGM Exporter (GPU metrics)
+      - alert: DCGMExporterDown
+        expr: up{job="dcgm_exporter"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: "DCGM Exporter is down"
+          description: "GPU metrics from DCGM exporter are unavailable"
+      
+      # High scrape duration
+      - alert: HighScrapeDuration
+        expr: scrape_duration_seconds > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: "High scrape duration"
+          description: "Prometheus is taking {{ $value }}s to scrape {{ $labels.job }}"

@@ -6,7 +6,7 @@ from pathlib import Path
 
 os.environ['AWS_ACCESS_KEY_ID'] = 'minio_admin'
 os.environ['AWS_SECRET_ACCESS_KEY'] = 'minio_password123'
-os.environ['MLFLOW_S3_ENDPOINT_URL'] = 'http://localhost:9000'
+os.environ['MLFLOW_S3_ENDPOINT_URL'] = 'http://minio:9000'
 os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
 
 try:
@@ -159,17 +159,16 @@ def main():
                 
                 print(f"✅ Model registered: {model_name}, version: {model_version.version}")
                 
-                # Transition to Staging stage
+                # Set staging alias (modern approach)
                 from mlflow.tracking import MlflowClient
                 client = MlflowClient()
-                client.transition_model_version_stage(
+                client.set_registered_model_alias(
                     name=model_name,
-                    version=model_version.version,
-                    stage="Staging",
-                    archive_existing_versions=False
+                    alias="staging",
+                    version=model_version.version
                 )
                 
-                print(f"✅ Model transitioned to Staging stage")
+                print(f"✅ Model assigned 'staging' alias")
                 
             except Exception as e:
                 print(f"⚠️  Failed to register model: {e}")

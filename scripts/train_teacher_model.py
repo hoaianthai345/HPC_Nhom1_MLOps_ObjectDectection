@@ -375,16 +375,30 @@ def main():
                 print("\n📦 Registering model to MLflow Model Registry...")
                 
                 try:
-                    # First, log the model artifact explicitly
-                    print("Logging model artifact to MLflow...")
-                    mlflow.log_artifact(str(best_model), artifact_path="model")
+                    # Use MlflowClient to register the artifact as a model
+                    client = mlflow.tracking.MlflowClient()
                     
-                    # Now register using the correct artifact path
-                    model_uri = f"runs:/{run.info.run_id}/model/best.pt"
+                    # Create or get the registered model
+                    try:
+                        client.create_registered_model(
+                            args.model_name,
+                            tags={
+                                "framework": "ultralytics",
+                                "model_type": "yolo26x",
+                                "role": "teacher"
+                            }
+                        )
+                        print(f"Successfully registered model '{args.model_name}'.")
+                    except Exception:
+                        # Model already exists
+                        pass
                     
-                    model_version = mlflow.register_model(
-                        model_uri=model_uri,
+                    # Create a new model version from the artifact (YOLO logs to weights/ path)
+                    source = f"runs:/{run.info.run_id}/weights/best.pt"
+                    model_version = client.create_model_version(
                         name=args.model_name,
+                        source=source,
+                        run_id=run.info.run_id,
                         tags={
                             "training_date": datetime.now().isoformat(),
                             "framework": "ultralytics",
@@ -396,17 +410,16 @@ def main():
                     
                     print(f"✅ Model registered: {args.model_name} version {model_version.version}")
                     
-                    # Set Production alias to the latest version
+                    # Set production alias to the latest version (using lowercase for consistency)
                     try:
-                        client = mlflow.tracking.MlflowClient()
                         client.set_registered_model_alias(
                             args.model_name, 
-                            "Production", 
+                            "production", 
                             model_version.version
                         )
-                        print(f"✅ Set 'Production' alias to version {model_version.version}")
+                        print(f"✅ Set 'production' alias to version {model_version.version}")
                     except Exception as e:
-                        print(f"⚠️  Warning: Could not set Production alias: {e}")
+                        print(f"⚠️  Warning: Could not set production alias: {e}")
                     
                     # Get validation metrics
                     if hasattr(results, 'results_dict'):
