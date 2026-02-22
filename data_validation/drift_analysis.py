@@ -56,7 +56,8 @@ def create_vision_data(
     batch_size: int = 32,
     img_size: int = 640,
     class_names: Optional[List[str]] = None,
-    max_samples: Optional[int] = None
+    max_samples: Optional[int] = None,
+    num_workers: int = 4
 ) -> YOLOVisionData:
     """Create Deepchecks VisionData from YOLO dataset."""
     class_names = class_names or DEFAULT_CLASSES
@@ -68,7 +69,8 @@ def create_vision_data(
         batch_size=batch_size,
         img_size=img_size,
         class_names=class_names,
-        max_samples=max_samples
+        max_samples=max_samples,
+        num_workers=num_workers
     )
     
     return YOLOVisionData(
@@ -239,7 +241,8 @@ def run_prediction_drift_analysis(
     img_size: int = 640,
     class_names: Optional[List[str]] = None,
     max_samples: Optional[int] = None,
-    open_browser: bool = False
+    open_browser: bool = False,
+    num_workers: int = 4
 ) -> Dict[str, Any]:
     """Run Prediction Drift analysis between student and teacher predictions."""
     print(f"Prediction Drift Analysis: Student vs Teacher")
@@ -250,7 +253,10 @@ def run_prediction_drift_analysis(
     class_names = class_names or DEFAULT_CLASSES
     
     print(f"Loading student predictions...")
-    from dataset_loader import YOLODataset, collate_fn
+    try:
+        from .dataset_loader import YOLODataset, collate_fn
+    except ImportError:
+        from dataset_loader import YOLODataset, collate_fn
     from torch.utils.data import DataLoader
     import torch
     
@@ -279,11 +285,11 @@ def run_prediction_drift_analysis(
     use_pin_memory = torch.cuda.is_available()
     student_loader = DataLoader(
         student_dataset, batch_size=batch_size, shuffle=False,
-        num_workers=4, collate_fn=collate_fn, pin_memory=use_pin_memory
+        num_workers=num_workers, collate_fn=collate_fn, pin_memory=use_pin_memory
     )
     teacher_loader = DataLoader(
         teacher_dataset, batch_size=batch_size, shuffle=False,
-        num_workers=4, collate_fn=collate_fn, pin_memory=use_pin_memory
+        num_workers=num_workers, collate_fn=collate_fn, pin_memory=use_pin_memory
     )
     
     student_data = YOLOVisionData(

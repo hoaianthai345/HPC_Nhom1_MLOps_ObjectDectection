@@ -16,6 +16,9 @@ USER airflow
 # Copy custom ultralytics-kd package (build context is project root)
 COPY --chown=airflow:root training_pipeline/src/ultralytics-kd /tmp/ultralytics-kd
 
+# Copy data_validation module for drift detection
+COPY --chown=airflow:root data_validation /opt/airflow/data_validation
+
 # Copy and setup dependencies
 COPY infra/airflow/requirements.txt /opt/airflow/requirements.txt
 
