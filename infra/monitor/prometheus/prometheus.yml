@@ -50,6 +50,17 @@ scrape_configs:
         labels:
           service: "yolo-serving"
 
+  - job_name: "serving_api_gpu"
+    metrics_path: "/metrics"
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "data_drift_score.*"
+        action: drop
+    static_configs:
+      - targets: ["api-gpu:8000"]
+        labels:
+          service: "yolo-serving-gpu"
+
   # Drift metrics - scrape every 30 minutes
   - job_name: "serving_api_drift"
     scrape_interval: 30m
@@ -97,16 +108,3 @@ scrape_configs:
     static_configs:
       - targets: ['pushgateway:9091']
   
-  # MLflow (if it exposes metrics)
-  - job_name: 'mlflow'
-    static_configs:
-      - targets: ['mlflow:5000']
-    metrics_path: '/metrics'
-    scrape_interval: 30s
-  
-  # Airflow (if configured with metrics exporter)
-  - job_name: 'airflow'
-    static_configs:
-      - targets: ['airflow-webserver:8080']
-    metrics_path: '/admin/metrics'
-    scrape_interval: 30s
