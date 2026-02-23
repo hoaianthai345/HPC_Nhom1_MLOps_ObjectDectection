@@ -103,6 +103,86 @@ def is_tensorrt_available() -> bool:
     return _tensorrt_detector is not None
 
 
+def reload_tensorrt_detector() -> dict:
+    """
+    Reload TensorRT detector with new engine from MinIO.
+    
+    Returns:
+        dict: Status message indicating success or failure
+    """
+    global _tensorrt_detector
+    
+    if not settings.TENSORRT_ENABLED:
+        return {
+            "status": "error",
+            "message": "TensorRT is not enabled. Set TENSORRT_ENABLED=true to enable."
+        }
+    
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            return {
+                "status": "error",
+                "message": "CUDA not available. TensorRT requires GPU."
+            }
+        
+        print("🔄 Reloading TensorRT detector...")
+        
+        if _tensorrt_detector is not None:
+            # Reload existing detector
+            _tensorrt_detector.reload_engine()
+        else:
+            # Initialize new detector if it doesn't exist
+            print("🔥 Initializing new TensorRT detector...")
+            _tensorrt_detector = TensorRTDetector(device="cuda")
+        
+        return {
+            "status": "success",
+            "message": "TensorRT detector reloaded successfully",
+            "engine_path": _tensorrt_detector.engine_path
+        }
+        
+    except Exception as e:
+        error_msg = f"Failed to reload TensorRT detector: {str(e)}"
+        print(f"❌ {error_msg}")
+        return {
+            "status": "error",
+            "message": error_msg
+        }
+
+
+def get_tensorrt_info() -> dict:
+    """
+    Get TensorRT engine information.
+    
+    Returns:
+        dict: Engine metadata or error message if not available
+    """
+    if not settings.TENSORRT_ENABLED:
+        return {
+            "available": False,
+            "message": "TensorRT is not enabled"
+        }
+    
+    if _tensorrt_detector is None:
+        return {
+            "available": False,
+            "message": "TensorRT detector not initialized"
+        }
+    
+    try:
+        engine_info = _tensorrt_detector.get_engine_info()
+        return {
+            "available": True,
+            **engine_info
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "message": f"Error getting engine info: {str(e)}"
+        }
+
+
 __all__ = [
     "init_components",
     "shutdown_components",
@@ -113,5 +193,7 @@ __all__ = [
     "is_model_loaded",
     "is_gpu_available",
     "is_tensorrt_available",
+    "reload_tensorrt_detector",
+    "get_tensorrt_info",
 ]
 

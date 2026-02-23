@@ -173,6 +173,40 @@ def check_tensorrt_available() -> bool:
     return False
 
 
+def get_tensorrt_info() -> dict:
+    """Get TensorRT engine information from API."""
+    try:
+        gpu_api_url = f"http://{settings.GPU_API_HOST}:{settings.GPU_API_PORT}"
+        response = requests.get(f"{gpu_api_url}/tensorrt/info", timeout=5)
+        if response.status_code == 200:
+            return response.json()
+    except requests.exceptions.RequestException as e:
+        logger.warning("Failed to get TensorRT info: %s", e)
+    return {"available": False}
+
+
+def format_tensorrt_status() -> str:
+    """Format TensorRT status information for display."""
+    info = get_tensorrt_info()
+    
+    if not info.get("available"):
+        return "⚠️ TensorRT: Not available"
+    
+    version = info.get("engine_version", "unknown")
+    last_modified = info.get("engine_last_modified", "unknown")
+    size_mb = info.get("engine_size_mb", "unknown")
+    
+    # Format the timestamp
+    try:
+        from datetime import datetime
+        dt = datetime.fromisoformat(last_modified.replace('Z', '+00:00'))
+        last_modified_str = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+    except:
+        last_modified_str = last_modified
+    
+    return f"🔥 TensorRT: **{version}** | Size: {size_mb} MB | Updated: {last_modified_str}"
+
+
 def create_gradio_app() -> gr.Blocks:
     """Tạo Gradio UI, luôn gọi FastAPI backend (/detect)."""
     # Check GPU and TensorRT availability at startup
@@ -185,10 +219,9 @@ def create_gradio_app() -> gr.Blocks:
     else:
         status_lines.append(f"⚠️ GPU service not available on port {settings.GPU_API_PORT} (CPU only mode)")
     
-    if tensorrt_available:
-        status_lines.append(f"🔥 TensorRT acceleration is available")
-    else:
-        status_lines.append(f"⚠️ TensorRT not available")
+    # Get TensorRT status with version info
+    tensorrt_status = format_tensorrt_status()
+    status_lines.append(tensorrt_status)
     
     gpu_status_msg = " | ".join(status_lines)
     
@@ -274,6 +307,26 @@ def create_gradio_app() -> gr.Blocks:
                 results_text = gr.Markdown(
                     label="📊 Results Summary",
                     value="*Upload an image and click 'Detect Objects'*"
+                )
+        
+        # TensorRT Engine Info section
+        if tensorrt_available:
+            with gr.Accordion("🔥 TensorRT Engine Info", open=True):
+                tensorrt_info_display = gr.Markdown(
+                    value=tensorrt_status
+                )
+                refresh_btn = gr.Button(
+                    "🔄 Refresh Engine Info",
+                    size="sm",
+                    variant="secondary"
+                )
+                
+                def refresh_tensorrt_info():
+                    return format_tensorrt_status()
+                
+                refresh_btn.click(
+                    fn=refresh_tensorrt_info,
+                    outputs=[tensorrt_info_display]
                 )
         
         # Info section

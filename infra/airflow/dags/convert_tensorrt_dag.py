@@ -18,11 +18,13 @@ Tasks:
 3. upload_tensorrt: Upload TensorRT engine to MinIO
 4. update_mlflow: Update model metadata with TensorRT info  
 5. notify_conversion: Send conversion status notification
+6. trigger_serving_pipeline_update: Trigger GPU API to reload new TensorRT engine
 
 Performance:
 - TensorRT provides 2-5x faster inference on NVIDIA GPUs with minimal accuracy loss
 - Optimizes for specific GPU architecture and input sizes
 - Enables FP16 precision for additional speedup
+- Automatically triggers serving pipeline reload for zero-downtime deployment
 
 Configuration (via Airflow Variables or Environment):
 - MODEL_NAME: Model to convert (default: from triggering DAG or 'yolo-nano-model')
@@ -30,6 +32,8 @@ Configuration (via Airflow Variables or Environment):
 - TENSORRT_FP16: Enable FP16 precision (default: true)
 - TENSORRT_BATCH: Batch size (default: 1)
 - TENSORRT_DEVICE: GPU device ID (default: 0)
+- GPU_API_HOST: Serving API GPU service host (default: 'serving_api_gpu')
+- GPU_API_PORT: Serving API GPU service port (default: '8000')
 """
 
 from airflow import DAG
@@ -264,6 +268,69 @@ def send_conversion_notification(**context):
     
     return {'status': 'success'}
 
+def trigger_serving_pipeline_update(**context):
+    """
+    Trigger serving pipeline to reload the new TensorRT engine.
+    
+    This task sends a request to the GPU API service to reload the TensorRT engine
+    from MinIO, ensuring the serving pipeline uses the latest converted model.
+    """
+    import requests
+    
+    print("🔄 Triggering serving pipeline to reload TensorRT engine...")
+    
+    # Get API endpoint from Airflow Variables
+    api_host = get_config('GPU_API_HOST', 'serving_api_gpu')
+    api_port = get_config('GPU_API_PORT', '8000')
+    api_url = f"http://{api_host}:{api_port}/tensorrt/reload"
+    
+    model_name = context['task_instance'].xcom_pull(task_ids='fetch_production_model', key='model_name')
+    model_version = context['task_instance'].xcom_pull(task_ids='fetch_production_model', key='model_version')
+    
+    try:
+        # Send reload request with timeout
+        response = requests.post(api_url, timeout=60)
+        
+        if response.status_code == 200:
+            result = response.json()
+            print(f"✅ Successfully triggered serving pipeline update")
+            print(f"   Status: {result.get('status')}")
+            print(f"   Message: {result.get('message')}")
+            print(f"   Engine Path: {result.get('engine_path', 'N/A')}")
+            
+            context['task_instance'].xcom_push(key='reload_status', value='success')
+            return result
+        else:
+            error_msg = f"API returned status {response.status_code}: {response.text}"
+            print(f"⚠️  {error_msg}")
+            context['task_instance'].xcom_push(key='reload_status', value='failed')
+            
+            # Don't fail the DAG if reload fails, just warn
+            print("⚠️  TensorRT engine uploaded to MinIO but serving pipeline reload failed.")
+            print("    You may need to manually restart the GPU API service to use the new engine.")
+            return {'status': 'warning', 'message': error_msg}
+            
+    except requests.exceptions.ConnectionError:
+        error_msg = f"Could not connect to serving API at {api_url}"
+        print(f"⚠️  {error_msg}")
+        print("    The serving pipeline may not be running or not reachable.")
+        print("    The TensorRT engine has been uploaded to MinIO and will be used")
+        print("    when the serving pipeline starts/restarts.")
+        context['task_instance'].xcom_push(key='reload_status', value='not_reachable')
+        return {'status': 'warning', 'message': error_msg}
+        
+    except requests.exceptions.Timeout:
+        error_msg = f"Timeout waiting for serving API at {api_url}"
+        print(f"⚠️  {error_msg}")
+        context['task_instance'].xcom_push(key='reload_status', value='timeout')
+        return {'status': 'warning', 'message': error_msg}
+        
+    except Exception as e:
+        error_msg = f"Unexpected error triggering serving pipeline update: {e}"
+        print(f"⚠️  {error_msg}")
+        context['task_instance'].xcom_push(key='reload_status', value='error')
+        return {'status': 'warning', 'message': error_msg}
+
 with DAG(
     'convert_tensorrt',
     default_args=default_args,
@@ -279,5 +346,6 @@ with DAG(
     upload = PythonOperator(task_id='upload_tensorrt', python_callable=upload_tensorrt)
     update = PythonOperator(task_id='update_mlflow_metadata', python_callable=update_mlflow_metadata)
     notify = PythonOperator(task_id='send_conversion_notification', python_callable=send_conversion_notification)
+    trigger_reload = PythonOperator(task_id='trigger_serving_pipeline_update', python_callable=trigger_serving_pipeline_update)
     
-    fetch >> export >> upload >> update >> notify
+    fetch >> export >> upload >> update >> notify >> trigger_reload

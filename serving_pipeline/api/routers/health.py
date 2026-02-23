@@ -36,5 +36,32 @@ async def check_gpu_availability():
     }
 
 
+@router.post("/tensorrt/reload")
+async def reload_tensorrt_engine():
+    """
+    Reload TensorRT engine from MinIO.
+    
+    This endpoint is typically triggered by the convert_tensorrt DAG
+    after successfully converting and uploading a new TensorRT engine.
+    """
+    result = deps.reload_tensorrt_detector()
+    
+    if result["status"] == "error":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=result["message"])
+    
+    return result
+
+
+@router.get("/tensorrt/info")
+async def get_tensorrt_info():
+    """
+    Get TensorRT engine information.
+    
+    Returns engine metadata including version, S3 key, size, and last modified timestamp.
+    """
+    return deps.get_tensorrt_info()
+
+
 __all__ = ["router"]
 

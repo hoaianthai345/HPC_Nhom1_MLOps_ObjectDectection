@@ -47,7 +47,11 @@ class MinIOClient:
                 endpoint_url=self.endpoint,
                 aws_access_key_id=self.access_key,
                 aws_secret_access_key=self.secret_key,
-                config=Config(signature_version='s3v4'),
+                config=Config(
+                    signature_version='s3v4',
+                    connect_timeout=10,  # Connection timeout in seconds
+                    read_timeout=60,     # Read timeout in seconds
+                ),
                 region_name='us-east-1'
             )
             logger.info(f"MinIO client initialized (endpoint: {self.endpoint})")
