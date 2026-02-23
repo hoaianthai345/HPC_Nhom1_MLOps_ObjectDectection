@@ -133,6 +133,14 @@ class YOLODataset(Dataset):
                         # Convert center to top-left corner
                         x = x_center - w / 2
                         y = y_center - h / 2
+                        
+                        # Clip coordinates to valid range (non-negative)
+                        x = max(0.0, x)
+                        y = max(0.0, y)
+                        # Clip width and height to stay within image bounds
+                        w = min(w, self.img_size - x)
+                        h = min(h, self.img_size - y)
+                        
                         labels.append([class_id, x, y, w, h])
         
         return np.array(labels, dtype=np.float32) if labels else np.zeros((0, 5), dtype=np.float32)
@@ -170,6 +178,14 @@ class YOLODataset(Dataset):
                         
                         x = x_center - w / 2
                         y = y_center - h / 2
+                        
+                        # Clip coordinates to valid range (non-negative)
+                        x = max(0.0, x)
+                        y = max(0.0, y)
+                        # Clip width and height to stay within image bounds
+                        w = min(w, self.img_size - x)
+                        h = min(h, self.img_size - y)
+                        
                         predictions.append([x, y, w, h, confidence, class_id])
         
         return np.array(predictions, dtype=np.float32) if predictions else np.zeros((0, 6), dtype=np.float32)
