@@ -209,12 +209,12 @@ class DriftDataSender:
                     "iou_threshold": self.iou_threshold,
                 }
                 
-                # Send request
+                # Send request (increased timeout for GPU inference + MinIO operations)
                 response = requests.post(
                     self.detect_endpoint,
                     files=files,
                     params=params,
-                    timeout=30,
+                    timeout=120,
                 )
                 
             result = {
