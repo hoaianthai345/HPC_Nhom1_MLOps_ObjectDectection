@@ -234,3 +234,5 @@ reports/
 production/
 runs/
 .vscode/
+
+outputs/
