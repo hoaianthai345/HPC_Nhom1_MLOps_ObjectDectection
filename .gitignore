@@ -223,8 +223,11 @@ models/
 *.joblib
 *.safetensors
 
-# Markdown (generated/docs, giữ README.md)
+# Markdown (generated/docs, giữ tài liệu chính của repo)
 *.md
+!README.md
+!docs/
+!docs/**/*.md
 # Reports & monitoring artifacts
 reports/
 production/

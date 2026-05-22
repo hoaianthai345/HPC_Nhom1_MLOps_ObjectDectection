@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Train Teacher Model (YOLOv26x) for Knowledge Distillation.
+Train Teacher Model (YOLO11x) for Knowledge Distillation.
 
-This script trains a larger, more accurate YOLO model (yolo26x) that can be used as:
+This script trains a larger, more accurate YOLO model (YOLO11x by default) that can be used as:
 1. A teacher model for knowledge distillation
 2. A baseline for comparison
 3. A production model if performance is sufficient
@@ -38,7 +38,7 @@ from ultralytics import YOLO
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description='Train YOLO teacher model (yolo26x)',
+        description='Train YOLO teacher model',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     
@@ -54,8 +54,8 @@ def parse_args():
     parser.add_argument(
         '--model',
         type=str,
-        default='yolo26x.pt',
-        help='Model architecture (yolo26x.pt recommended for teacher)'
+        default='yolo11x.pt',
+        help='Model weights or architecture for teacher training'
     )
     
     # Training hyperparameters
@@ -384,7 +384,7 @@ def main():
                             args.model_name,
                             tags={
                                 "framework": "ultralytics",
-                                "model_type": "yolo26x",
+                                "model_type": Path(args.model).stem,
                                 "role": "teacher"
                             }
                         )
@@ -402,7 +402,7 @@ def main():
                         tags={
                             "training_date": datetime.now().isoformat(),
                             "framework": "ultralytics",
-                            "model_type": "yolo26x",
+                            "model_type": Path(args.model).stem,
                             "role": "teacher",
                             "training_method": "standard"
                         }

@@ -225,7 +225,7 @@ serving_model.onnx  # optional
 ```bash
 python scripts/train_teacher_model.py \
   --data data/demo_subset/data.yaml \
-  --model yolo26x.pt \
+  --model yolo11x.pt \
   --epochs 50 \
   --batch 16 \
   --imgsz 640 \
@@ -239,7 +239,7 @@ python scripts/train_teacher_model.py \
 
 ```bash
 yolo detect train \
-  model=yolo26n.pt \
+  model=yolo11n.pt \
   data=data/demo_subset/data.yaml \
   epochs=50 \
   imgsz=640 \
@@ -255,7 +255,7 @@ yolo detect train \
 python training_pipeline/src/train.py \
   training_pipeline/src/config/train.yaml \
   --teacher-weights runs/teacher/teacher_yolo/weights/best.pt \
-  --student-weights yolo26n.pt \
+  --student-weights yolo11n.pt \
   --data data/demo_subset/data.yaml \
   --mlflow-tracking-uri http://localhost:5000 \
   --mlflow-experiment traffic-distillation \
@@ -340,6 +340,7 @@ Output:
   ]
 }
 ```
+
 
 
 ## Ghi Nhận Nguồn Tham Khảo
