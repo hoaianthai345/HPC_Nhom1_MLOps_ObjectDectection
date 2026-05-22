@@ -1,0 +1,19 @@
+services:
+  api:
+    logging:
+      driver: json-file
+    environment:
+      - YOLO_MODEL_PATH=/app/serving_model.pt
+      - DEVICE=cpu
+      - USE_MINIO=false
+      - PRODUCTION_DIR=/data/production
+      - PRODUCTION_DATA_DIR=/data/production-data
+
+  ui:
+    logging:
+      driver: json-file
+    environment:
+      - API_HOST=api
+      - API_PORT=8000
+      - GRADIO_PORT=7860
+      - YOLO_MODEL_PATH=/app/serving_model.pt

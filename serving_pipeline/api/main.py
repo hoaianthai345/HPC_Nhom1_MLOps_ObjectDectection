@@ -3,6 +3,7 @@ FastAPI application entrypoint for the Object Detection API.
 """
 import asyncio
 import logging
+import os
 
 import psutil
 from fastapi import FastAPI
@@ -14,7 +15,6 @@ from ..config import settings
 from . import dependencies as deps
 from .routers.detection import router as detection_router
 from .routers.health import router as health_router
-from .routers.drift import router as drift_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -112,9 +112,15 @@ async def shutdown_event():
 
 # Register routers
 app.include_router(health_router)
-app.include_router(drift_router)
 app.include_router(detection_router)
+
+if os.getenv("ENABLE_DRIFT_API", "true").lower() in {"1", "true", "yes"}:
+    try:
+        from .routers.drift import router as drift_router
+
+        app.include_router(drift_router)
+    except Exception as exc:
+        logger.warning("Drift API disabled because dependencies are unavailable: %s", exc)
 
 
 __all__ = ["app"]
-
