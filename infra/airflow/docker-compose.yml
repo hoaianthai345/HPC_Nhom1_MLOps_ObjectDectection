@@ -74,7 +74,7 @@ x-airflow-common:
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
 
     # JWT Authentication - REQUIRED for Execution API 
-    AIRFLOW__API_AUTH__JWT_SECRET: 'aivn-aio2025-airflow-secret' 
+    AIRFLOW__API_AUTH__JWT_SECRET: 'hpc-nhom1-airflow-secret' 
     AIRFLOW__EXECUTION_API__JWT_AUDIENCE: 'urn:airflow.apache.org:task' 
     AIRFLOW__EXECUTION_API__JWT_EXPIRATION_TIME: '600'
     # The following line can be used to set a custom config file, stored in the local config folder
@@ -116,7 +116,7 @@ services:
       start_period: 5s
     restart: always
     networks:
-      - aio-network
+      - hpc-nhom1-network
 
   redis:
     # Redis is limited to 7.2-bookworm due to licencing change
@@ -132,7 +132,7 @@ services:
       start_period: 30s
     restart: always
     networks:
-      - aio-network
+      - hpc-nhom1-network
 
   airflow-apiserver:
     <<: *airflow-common
@@ -140,7 +140,7 @@ services:
     ports:
       - "8080:8080"
     networks:
-      - aio-network
+      - hpc-nhom1-network
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/version"]
       interval: 30s
@@ -164,7 +164,7 @@ services:
       start_period: 30s
     restart: always
     networks:
-      - aio-network
+      - hpc-nhom1-network
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
@@ -181,7 +181,7 @@ services:
       start_period: 30s
     restart: always
     networks:
-      - aio-network
+      - hpc-nhom1-network
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
@@ -207,7 +207,7 @@ services:
     restart: always
     shm_size: '4gb'  # Increase shared memory for PyTorch DataLoader workers
     networks:
-      - aio-network
+      - hpc-nhom1-network
     depends_on:
       <<: *airflow-common-depends-on
       airflow-apiserver:
@@ -233,7 +233,7 @@ services:
       start_period: 30s
     restart: always
     networks:
-      - aio-network
+      - hpc-nhom1-network
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
@@ -331,14 +331,14 @@ services:
       _PIP_ADDITIONAL_REQUIREMENTS: ''
     user: "0:0"
     networks:
-      - aio-network
+      - hpc-nhom1-network
 
   airflow-cli:
     <<: *airflow-common
     profiles:
       - debug
     networks:
-      - aio-network
+      - hpc-nhom1-network
     environment:
       <<: *airflow-common-env
       CONNECTION_CHECK_MAX_COUNT: "0"
@@ -361,7 +361,7 @@ services:
     ports:
       - "5555:5555"
     networks:
-      - aio-network
+      - hpc-nhom1-network
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:5555/"]
       interval: 30s
@@ -388,11 +388,11 @@ services:
       - '--web.listen-address=:9102'
     restart: always
     networks:
-      - aio-network
+      - hpc-nhom1-network
 
 volumes:
   postgres-db-volume:
 
 networks:
-  aio-network:
+  hpc-nhom1-network:
     external: true

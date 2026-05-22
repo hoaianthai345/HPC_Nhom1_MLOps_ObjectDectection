@@ -12,7 +12,7 @@ services:
     ports:
       - "8000:8000"
     networks:
-      - aio-network
+      - hpc-nhom1-network
     environment:
       - DEBUG=true
       - HOST=0.0.0.0
@@ -61,7 +61,7 @@ services:
     ports:
       - "8001:8000"
     networks:
-      - aio-network
+      - hpc-nhom1-network
     environment:
       - DEBUG=true
       - HOST=0.0.0.0
@@ -117,7 +117,7 @@ services:
     ports:
       - "7860:7860"
     networks:
-      - aio-network
+      - hpc-nhom1-network
     environment:
       - DEBUG=true
       - HOST=0.0.0.0
@@ -152,5 +152,5 @@ volumes:
     driver: local
 
 networks:
-  aio-network:
+  hpc-nhom1-network:
     external: true

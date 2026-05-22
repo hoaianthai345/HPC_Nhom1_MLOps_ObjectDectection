@@ -2,11 +2,11 @@ services:
   mysql:
     restart: always
     image: mysql/mysql-server:8.0
-    container_name: aio_mysql
+    container_name: hpc_nhom1_mysql
     ports:
       - "3306:3306"
     networks:
-      - aio-network
+      - hpc-nhom1-network
     environment:
       - MYSQL_DATABASE=${MYSQL_DATABASE}
       - MYSQL_USER=${MYSQL_USER}
@@ -18,12 +18,12 @@ services:
   minio:
     restart: always
     image: minio/minio:latest
-    container_name: aio_minio
+    container_name: hpc_nhom1_minio
     ports:
       - "9000:9000"
       - "9001:9001"
     networks:
-      - aio-network
+      - hpc-nhom1-network
     command: server /data --console-address ':9001' --address ':9000'
     environment:
       - MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID}
@@ -35,9 +35,9 @@ services:
     image: minio/mc:latest
     depends_on:
       - minio
-    container_name: aio_minio_mc
+    container_name: hpc_nhom1_minio_mc
     networks:
-      - aio-network
+      - hpc-nhom1-network
     env_file:
       - .env
     entrypoint: >
@@ -72,7 +72,7 @@ services:
     ports:
       - "5000:5000"
     networks:
-      - aio-network
+      - hpc-nhom1-network
     environment:
       - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
@@ -87,5 +87,5 @@ services:
       --cors-allowed-origins="*"
 
 networks:
-  aio-network:
+  hpc-nhom1-network:
     external: true

@@ -1,7 +1,7 @@
 services:
   loki:
     image: grafana/loki:latest
-    container_name: aivn-loki
+    container_name: hpc-nhom1-loki
     volumes:
       - ./loki/config.yml:/etc/loki/local-config.yaml
     healthcheck:
@@ -17,11 +17,11 @@ services:
       options:
         loki-url: "http://localhost:3100/loki/api/v1/push"
     networks:
-      - aio-network
+      - hpc-nhom1-network
   
   prometheus:
     image: prom/prometheus:latest
-    container_name: aivn-prometheus
+    container_name: hpc-nhom1-prometheus
     ports:
       - "9090:9090"
     volumes:
@@ -36,11 +36,11 @@ services:
       options:
         loki-url: "http://localhost:3100/loki/api/v1/push"
     networks:
-      - aio-network
+      - hpc-nhom1-network
 
   grafana:
     image: grafana/grafana:latest
-    container_name: aivn-grafana
+    container_name: hpc-nhom1-grafana
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -63,7 +63,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_INSTALL_PLUGINS=https://storage.googleapis.com/integration-artifacts/grafana-lokiexplore-app/grafana-lokiexplore-app-latest.zip;grafana-lokiexplore-app
     networks:
-      - aio-network
+      - hpc-nhom1-network
 
   node_exporter:
     image: quay.io/prometheus/node-exporter:latest
@@ -77,7 +77,7 @@ services:
     volumes:
       - '/:/host:ro,rslave'
     networks:
-      - aio-network
+      - hpc-nhom1-network
 
   dcgm-exporter:
     image: nvcr.io/nvidia/k8s/dcgm-exporter:4.4.0-4.5.0-ubuntu22.04
@@ -94,11 +94,11 @@ services:
       - SYS_ADMIN
     runtime: nvidia
     networks:
-      - aio-network
+      - hpc-nhom1-network
 
   alertmanager:
     image: prom/alertmanager:latest
-    container_name: aivn-alertmanager
+    container_name: hpc-nhom1-alertmanager
     restart: unless-stopped
     ports:
       - "9093:9093"
@@ -113,11 +113,11 @@ services:
       options:
         loki-url: "http://localhost:3100/loki/api/v1/push"
     networks:
-      - aio-network
+      - hpc-nhom1-network
 
   pushgateway:
     image: prom/pushgateway:latest
-    container_name: aivn-pushgateway
+    container_name: hpc-nhom1-pushgateway
     restart: unless-stopped
     ports:
       - "9091:9091"
@@ -126,10 +126,10 @@ services:
       options:
         loki-url: "http://localhost:3100/loki/api/v1/push"
     networks:
-      - aio-network
+      - hpc-nhom1-network
 
 networks:
-  aio-network:
+  hpc-nhom1-network:
     external: true
 
 volumes:
