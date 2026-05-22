@@ -26,6 +26,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copy application code
 COPY serving_pipeline /app/serving_pipeline/
+COPY data_validation /app/data_validation/
 
 # Create production data directory
 RUN mkdir -p /app/serving_pipeline/production/images && \

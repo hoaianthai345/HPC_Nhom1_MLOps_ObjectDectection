@@ -45,7 +45,7 @@ def main():
     cfg = load_config(args.config)
 
     teacher_weights = args.teacher_weights
-    student_path = args.student_weights or "yolo26n.pt"
+    student_path = args.student_weights or "yolo11n.pt"
     data_yaml = args.data
 
 

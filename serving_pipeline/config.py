@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     MAX_IMAGE_HEIGHT: int = Field(default=4096, env="MAX_IMAGE_HEIGHT")
     
     # YOLO Model settings
-    YOLO_MODEL_PATH: str = Field(default="yolo26n.pt", env="YOLO_MODEL_PATH")
+    YOLO_MODEL_PATH: str = Field(default="yolo11n.pt", env="YOLO_MODEL_PATH")
     YOLO_CONFIDENCE_THRESHOLD: float = Field(default=0.25, env="YOLO_CONFIDENCE_THRESHOLD")
     YOLO_IOU_THRESHOLD: float = Field(default=0.45, env="YOLO_IOU_THRESHOLD")
     YOLO_MAX_DETECTIONS: int = Field(default=100, env="YOLO_MAX_DETECTIONS")

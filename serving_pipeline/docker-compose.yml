@@ -18,7 +18,7 @@ services:
       - HOST=0.0.0.0
       - API_PORT=8000
       - GRADIO_PORT=7860
-      - YOLO_MODEL_PATH=/app/yolo26n.pt
+      - YOLO_MODEL_PATH=yolo11n.pt
       - YOLO_CONFIDENCE_THRESHOLD=0.25
       - YOLO_IOU_THRESHOLD=0.45
       - YOLO_MAX_DETECTIONS=100
@@ -38,8 +38,6 @@ services:
       - ..:/app:ro
       # Mount volume for production samples (drift detection)
       - production_data:/data/production
-      # Mount local models as fallback
-      - ../yolo26n.pt:/app/yolo26n.pt:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -49,6 +47,8 @@ services:
 
   # GPU-enabled API Service
   api-gpu:
+    profiles:
+      - gpu
     build:
       context: ..
       dockerfile: serving_pipeline/docker/Dockerfile.backend
@@ -67,7 +67,7 @@ services:
       - HOST=0.0.0.0
       - API_PORT=8000
       - GRADIO_PORT=7860
-      - YOLO_MODEL_PATH=/app/yolo26n.pt
+      - YOLO_MODEL_PATH=yolo11n.pt
       - YOLO_CONFIDENCE_THRESHOLD=0.25
       - YOLO_IOU_THRESHOLD=0.45
       - YOLO_MAX_DETECTIONS=100
@@ -93,8 +93,6 @@ services:
       - ..:/app:ro
       # Mount volume for production samples (drift detection)
       - production_data:/data/production
-      # Mount local models as fallback
-      - ../yolo26n.pt:/app/yolo26n.pt:ro
     deploy:
       resources:
         reservations:
@@ -128,7 +126,7 @@ services:
       - API_HOST=api
       - GPU_API_HOST=api-gpu
       - GPU_API_PORT=8000
-      - YOLO_MODEL_PATH=yolo26n.pt
+      - YOLO_MODEL_PATH=yolo11n.pt
       - YOLO_CONFIDENCE_THRESHOLD=0.25
       - YOLO_IOU_THRESHOLD=0.45
       - MAX_FILE_SIZE_MB=10.0
@@ -137,8 +135,6 @@ services:
       - ..:/app:ro
     depends_on:
       api:
-        condition: service_healthy
-      api-gpu:
         condition: service_healthy
     logging:
       driver: loki

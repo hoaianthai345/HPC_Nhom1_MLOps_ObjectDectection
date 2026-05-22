@@ -18,7 +18,7 @@ augmentation:
 
 logging:
   project: runs/distillation
-  name: yolo26_distillation_e2e
+  name: yolo11_distillation_e2e
   save: true
   save_period: 10
   plots: true
@@ -29,4 +29,3 @@ distillation:
   sparse_logit_weight: 0.25
   box_loss_weight: 0.5
   box_objectness_threshold: 0.3
-
