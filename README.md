@@ -341,19 +341,6 @@ Output:
 }
 ```
 
-## Kết Quả Cần Báo Cáo
-
-Sau khi train, nhóm cần điền bảng thực nghiệm:
-
-| Model | Format | Device | mAP50 | mAP50-95 | Latency | FPS | Size |
-|---|---|---|---:|---:|---:|---:|---:|
-| Teacher YOLO | PyTorch | TBD | TBD | TBD | TBD | TBD | TBD |
-| Student baseline | PyTorch | TBD | TBD | TBD | TBD | TBD | TBD |
-| Student KD | PyTorch | TBD | TBD | TBD | TBD | TBD | TBD |
-| Student KD | ONNX | TBD | TBD | TBD | TBD | TBD | TBD |
-| Student KD | TensorRT | GPU | TBD | TBD | TBD | TBD | TBD |
-
-Không điền số liệu nếu chưa chạy thực nghiệm. Giữ `TBD` cho các ô chưa có evidence.
 
 ## Ghi Nhận Nguồn Tham Khảo
 
