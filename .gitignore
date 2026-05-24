@@ -232,6 +232,9 @@ models/
 # Reports & monitoring artifacts
 reports/
 production/
+production-data/
+serving_pipeline/production/
+serving_pipeline/production-data/
 runs/
 .vscode/
 
