@@ -1,0 +1,7 @@
+key,format,device,inf_mean_ms,inf_p95_ms,fps_inf,e2e_mean_ms,fps_e2e
+teacher_pt_gpu,PyTorch,GPU,66.872,94.189,15.0,71.845,13.9
+student_pt_gpu,PyTorch,GPU,9.403,10.604,106.3,11.137,89.8
+serving_pt_gpu,PyTorch,GPU,9.375,11.625,106.7,11.111,90.0
+serving_pt_cpu,PyTorch,CPU,133.58,185.973,7.5,136.326,7.3
+serving_onnx,ONNX,GPU,5.109,7.74,195.7,6.855,145.9
+serving_trt,TensorRT,GPU,1.842,1.901,543.0,3.593,278.3

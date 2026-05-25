@@ -6,6 +6,9 @@ uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
 gradio>=4.0.0
 
+# Keep Apple Silicon Docker CPU builds from resolving to newer CUDA-enabled ARM wheels.
+torch==2.5.1
+torchvision==0.20.1
 ultralytics>=8.4.0
 Pillow>=10.0.0
 numpy>=1.24.0
@@ -15,6 +18,8 @@ pydantic>=2.0.0
 pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
 requests>=2.31.0
+boto3>=1.34.0
+botocore>=1.34.0
 
 prometheus-client>=0.20.0
 prometheus-fastapi-instrumentator>=6.1.0

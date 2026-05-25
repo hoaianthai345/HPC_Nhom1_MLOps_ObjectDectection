@@ -1,0 +1,4 @@
+model,params,size_mb,precision,recall,map50,map5095,train_time_s
+teacher,58820118,112.85,0.8244,0.7774,0.8269,0.5737,2753.31
+student_baseline,2505750,5.14,0.6907,0.6783,0.714,0.4809,515.629
+student_kd,2505750,5.14,0.7342,0.6789,0.725,0.4899,967.585

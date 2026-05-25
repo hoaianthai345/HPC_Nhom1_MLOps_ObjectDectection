@@ -5,10 +5,6 @@ services:
       dockerfile: serving_pipeline/docker/Dockerfile.backend
     container_name: serving_api
     restart: unless-stopped
-    logging:
-      driver: loki
-      options:
-        loki-url: "http://localhost:3100/loki/api/v1/push"
     ports:
       - "8000:8000"
     networks:
@@ -18,7 +14,7 @@ services:
       - HOST=0.0.0.0
       - API_PORT=8000
       - GRADIO_PORT=7860
-      - YOLO_MODEL_PATH=yolo11n.pt
+      - YOLO_MODEL_PATH=/app/serving_model.pt
       - YOLO_CONFIDENCE_THRESHOLD=0.25
       - YOLO_IOU_THRESHOLD=0.45
       - YOLO_MAX_DETECTIONS=100
@@ -52,12 +48,10 @@ services:
     build:
       context: ..
       dockerfile: serving_pipeline/docker/Dockerfile.backend
+      args:
+        REQUIREMENTS_FILE: serving_pipeline/requirements.txt
     container_name: serving_api_gpu
     restart: unless-stopped
-    logging:
-      driver: loki
-      options:
-        loki-url: "http://localhost:3100/loki/api/v1/push"
     ports:
       - "8001:8000"
     networks:
@@ -67,7 +61,7 @@ services:
       - HOST=0.0.0.0
       - API_PORT=8000
       - GRADIO_PORT=7860
-      - YOLO_MODEL_PATH=yolo11n.pt
+      - YOLO_MODEL_PATH=/app/serving_model.pt
       - YOLO_CONFIDENCE_THRESHOLD=0.25
       - YOLO_IOU_THRESHOLD=0.45
       - YOLO_MAX_DETECTIONS=100
@@ -126,7 +120,7 @@ services:
       - API_HOST=api
       - GPU_API_HOST=api-gpu
       - GPU_API_PORT=8000
-      - YOLO_MODEL_PATH=yolo11n.pt
+      - YOLO_MODEL_PATH=/app/serving_model.pt
       - YOLO_CONFIDENCE_THRESHOLD=0.25
       - YOLO_IOU_THRESHOLD=0.45
       - MAX_FILE_SIZE_MB=10.0
@@ -136,10 +130,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
-    logging:
-      driver: loki
-      options:
-        loki-url: "http://localhost:3100/loki/api/v1/push"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7860"]
       interval: 30s

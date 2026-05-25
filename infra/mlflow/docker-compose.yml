@@ -3,8 +3,6 @@ services:
     restart: always
     image: mysql/mysql-server:8.0
     container_name: hpc_nhom1_mysql
-    ports:
-      - "3306:3306"
     networks:
       - hpc-nhom1-network
     environment:
@@ -20,8 +18,8 @@ services:
     image: minio/minio:latest
     container_name: hpc_nhom1_minio
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_HOST_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
     networks:
       - hpc-nhom1-network
     command: server /data --console-address ':9001' --address ':9000'
@@ -70,7 +68,7 @@ services:
       - mysql
       - minio
     ports:
-      - "5000:5000"
+      - "${MLFLOW_HOST_PORT:-5000}:5000"
     networks:
       - hpc-nhom1-network
     environment:

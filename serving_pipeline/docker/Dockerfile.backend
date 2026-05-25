@@ -17,12 +17,13 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY serving_pipeline/requirements.txt .
+# Default to the CPU-local dependency set. The GPU compose profile overrides this.
+ARG REQUIREMENTS_FILE=serving_pipeline/requirements.demo.txt
+COPY ${REQUIREMENTS_FILE} /tmp/requirements.txt
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Copy application code
 COPY serving_pipeline /app/serving_pipeline/

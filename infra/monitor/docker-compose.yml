@@ -12,10 +12,6 @@ services:
     restart: unless-stopped
     ports:
       - "3100:3100"
-    logging:
-      driver: loki
-      options:
-        loki-url: "http://localhost:3100/loki/api/v1/push"
     networks:
       - hpc-nhom1-network
   
@@ -31,10 +27,6 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    logging:
-      driver: loki
-      options:
-        loki-url: "http://localhost:3100/loki/api/v1/push"
     networks:
       - hpc-nhom1-network
 
@@ -54,10 +46,6 @@ services:
     volumes:
       - grafana-storage:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
-    logging:
-      driver: loki
-      options:
-        loki-url: "http://localhost:3100/loki/api/v1/push"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -75,11 +63,13 @@ services:
     pid: host
     restart: unless-stopped
     volumes:
-      - '/:/host:ro,rslave'
+      - '/:/host:ro'
     networks:
       - hpc-nhom1-network
 
   dcgm-exporter:
+    profiles:
+      - gpu
     image: nvcr.io/nvidia/k8s/dcgm-exporter:4.4.0-4.5.0-ubuntu22.04
     container_name: dcgm-exporter
     restart: unless-stopped
@@ -108,10 +98,6 @@ services:
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
-    logging:
-      driver: loki
-      options:
-        loki-url: "http://localhost:3100/loki/api/v1/push"
     networks:
       - hpc-nhom1-network
 
@@ -121,10 +107,6 @@ services:
     restart: unless-stopped
     ports:
       - "9091:9091"
-    logging:
-      driver: loki
-      options:
-        loki-url: "http://localhost:3100/loki/api/v1/push"
     networks:
       - hpc-nhom1-network
 

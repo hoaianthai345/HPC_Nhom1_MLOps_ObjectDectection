@@ -1,0 +1,151 @@
+{
+  "generated_at": "2026-05-25T08:21:43",
+  "device": {
+    "cuda": true,
+    "torch": "2.10.0+cu128",
+    "gpu": "Tesla T4",
+    "gpu_mem_gb": 15.64,
+    "python": "3.12.13",
+    "platform": "Linux-6.6.122+-x86_64-with-glibc2.35",
+    "cpu_count": 2,
+    "ram_gb": 13.29
+  },
+  "config": {
+    "teacher_model": "yolo26x.pt",
+    "student_model": "yolo26n.pt",
+    "teacher_epochs": 30,
+    "student_epochs": 30,
+    "imgsz": 640,
+    "teacher_batch": 4,
+    "student_batch": 16,
+    "seed": 42,
+    "subset_size": 1000,
+    "map_conf": 0.001,
+    "map_iou": 0.7,
+    "lat_conf": 0.25,
+    "lat_iou": 0.45,
+    "bench_warmup": 15,
+    "bench_iters": 100
+  },
+  "meta": {
+    "teacher": {
+      "params": 58820118,
+      "size_mb": 112.85,
+      "train_precision": 0.82439,
+      "train_recall": 0.77758,
+      "train_map50": 0.82656,
+      "train_map5095": 0.57547,
+      "train_time_s": 2753.31
+    },
+    "student_baseline": {
+      "params": 2505750,
+      "size_mb": 5.14,
+      "train_precision": 0.68924,
+      "train_recall": 0.6772,
+      "train_map50": 0.71339,
+      "train_map5095": 0.48042,
+      "train_time_s": 515.629
+    },
+    "student_kd": {
+      "params": 2505750,
+      "size_mb": 5.14,
+      "train_precision": 0.73571,
+      "train_recall": 0.6765,
+      "train_map50": 0.72414,
+      "train_map5095": 0.49,
+      "train_time_s": 967.585
+    }
+  },
+  "validation": {
+    "teacher": {
+      "map50": 0.8269,
+      "map5095": 0.5737,
+      "precision": 0.8244,
+      "recall": 0.7774
+    },
+    "student_baseline": {
+      "map50": 0.714,
+      "map5095": 0.4809,
+      "precision": 0.6907,
+      "recall": 0.6783
+    },
+    "student_kd": {
+      "map50": 0.725,
+      "map5095": 0.4899,
+      "precision": 0.7342,
+      "recall": 0.6789
+    }
+  },
+  "latency": {
+    "teacher_pt_gpu": {
+      "format": "PyTorch",
+      "device": "GPU",
+      "inf_mean_ms": 66.872,
+      "inf_p50_ms": 61.349,
+      "inf_p95_ms": 94.189,
+      "e2e_mean_ms": 71.845,
+      "e2e_p95_ms": 105.268,
+      "fps_inf": 15.0,
+      "fps_e2e": 13.9
+    },
+    "student_pt_gpu": {
+      "format": "PyTorch",
+      "device": "GPU",
+      "inf_mean_ms": 9.403,
+      "inf_p50_ms": 9.201,
+      "inf_p95_ms": 10.604,
+      "e2e_mean_ms": 11.137,
+      "e2e_p95_ms": 12.367,
+      "fps_inf": 106.3,
+      "fps_e2e": 89.8
+    },
+    "serving_pt_gpu": {
+      "format": "PyTorch",
+      "device": "GPU",
+      "inf_mean_ms": 9.375,
+      "inf_p50_ms": 9.063,
+      "inf_p95_ms": 11.625,
+      "e2e_mean_ms": 11.111,
+      "e2e_p95_ms": 13.496,
+      "fps_inf": 106.7,
+      "fps_e2e": 90.0
+    },
+    "serving_pt_cpu": {
+      "format": "PyTorch",
+      "device": "CPU",
+      "inf_mean_ms": 133.58,
+      "inf_p50_ms": 122.723,
+      "inf_p95_ms": 185.973,
+      "e2e_mean_ms": 136.326,
+      "e2e_p95_ms": 189.128,
+      "fps_inf": 7.5,
+      "fps_e2e": 7.3
+    },
+    "serving_onnx": {
+      "format": "ONNX",
+      "device": "GPU",
+      "inf_mean_ms": 5.109,
+      "inf_p50_ms": 4.476,
+      "inf_p95_ms": 7.74,
+      "e2e_mean_ms": 6.855,
+      "e2e_p95_ms": 9.479,
+      "fps_inf": 195.7,
+      "fps_e2e": 145.9
+    },
+    "serving_trt": {
+      "format": "TensorRT",
+      "device": "GPU",
+      "inf_mean_ms": 1.842,
+      "inf_p50_ms": 1.83,
+      "inf_p95_ms": 1.901,
+      "e2e_mean_ms": 3.593,
+      "e2e_p95_ms": 3.92,
+      "fps_inf": 543.0,
+      "fps_e2e": 278.3
+    }
+  },
+  "checksums": {
+    "best.pt": "9bfe5a91e47b275836869d9b2086850432eb305f",
+    "serving_model.onnx": "af7654153c6f35951d411a6d62dd880c14ea2642"
+  }
+}

@@ -291,6 +291,30 @@ cd serving_pipeline
 docker compose --profile gpu up -d
 ```
 
+## Tài Liệu Cho Dev
+
+Khi bàn giao cho thành viên khác, ưu tiên theo thứ tự sau:
+
+- [docs/dev_build_matrix.md](docs/dev_build_matrix.md): hướng dẫn build và demo theo từng loại máy.
+- [docs/team_improvement_guide.md](docs/team_improvement_guide.md): phân công và các hạng mục cải tiến cho team.
+- `scripts/prepare_demo_model.sh`: chuẩn hóa file model về `serving_model.pt`.
+- `scripts/run_local_demo.sh`: dựng local demo FastAPI + Gradio.
+- `scripts/stop_local_demo.sh`: dừng local demo.
+- `scripts/package_project_artifacts.sh`: đóng gói repo và artifact để bàn giao.
+
+Chạy local nhanh nhất:
+
+```bash
+bash scripts/prepare_demo_model.sh "/path/to/model.pt"
+bash scripts/run_local_demo.sh
+```
+
+Đóng gói cho người khác:
+
+```bash
+bash scripts/package_project_artifacts.sh
+```
+
 ## API Chính
 
 ### Health check

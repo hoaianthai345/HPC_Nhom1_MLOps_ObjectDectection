@@ -139,11 +139,13 @@ celerybeat.pid
 .env
 .envrc
 .venv
+.venv*/
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+kaggle.json
 
 # Spyder project settings
 .spyderproject
@@ -218,6 +220,7 @@ models/
 *.pt
 *.pth
 *.onnx
+*.engine
 *.bin
 *.h5
 *.pkl
@@ -239,3 +242,21 @@ runs/
 .vscode/
 
 outputs/
+
+# Python venv (local development)
+.venv*/
+
+# Model artifacts (build outputs; teacher_best.pt exceeds 100MB GitHub limit)
+*.pt
+*.onnx
+*.engine
+model_artifacts/
+mlruns/
+
+# Keep CSV/JSON benchmark results (small, evidence for report)
+!reports/benchmark/
+!reports/benchmark/**
+
+# Keep script README docs (overrides global *.md ignore)
+!scripts/*.md
+!scripts/**/*.md
