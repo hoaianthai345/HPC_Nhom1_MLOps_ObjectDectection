@@ -1,0 +1,47 @@
+[
+  {
+    "index": 1,
+    "image": "ant_sales-10410_png_jpg.rf.413acc130993583ff0f1dcba4cec62ff.jpg",
+    "n_gt": 7,
+    "n_classes": 3,
+    "recall": 1.0,
+    "fp": 0,
+    "render": "qualitative_1.png"
+  },
+  {
+    "index": 2,
+    "image": "ant_sales-10975_png_jpg.rf.071e53f53dc337727cb9b7da13ef439b.jpg",
+    "n_gt": 7,
+    "n_classes": 3,
+    "recall": 1.0,
+    "fp": 0,
+    "render": "qualitative_2.png"
+  },
+  {
+    "index": 3,
+    "image": "ant_sales-10530_png_jpg.rf.b1ad3926c44f2afe2b699a54328d9915.jpg",
+    "n_gt": 5,
+    "n_classes": 3,
+    "recall": 1.0,
+    "fp": 0,
+    "render": "qualitative_3.png"
+  },
+  {
+    "index": 4,
+    "image": "ant_sales-10885_png_jpg.rf.3c23621e7aff1ac1e555fd89cb19e9d8.jpg",
+    "n_gt": 5,
+    "n_classes": 3,
+    "recall": 1.0,
+    "fp": 1,
+    "render": "qualitative_4.png"
+  },
+  {
+    "index": 5,
+    "image": "ant_sales-11010_png_jpg.rf.c81d9a94f19419de4302aea98cb54e6e.jpg",
+    "n_gt": 5,
+    "n_classes": 3,
+    "recall": 1.0,
+    "fp": 1,
+    "render": "qualitative_5.png"
+  }
+]

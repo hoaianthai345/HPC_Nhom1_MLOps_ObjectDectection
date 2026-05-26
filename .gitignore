@@ -233,7 +233,7 @@ models/
 !docs/
 !docs/**/*.md
 # Reports & monitoring artifacts
-reports/
+reports/*
 production/
 production-data/
 serving_pipeline/production/
@@ -256,6 +256,10 @@ mlruns/
 # Keep CSV/JSON benchmark results (small, evidence for report)
 !reports/benchmark/
 !reports/benchmark/**
+!reports/p1/
+!reports/p1/**
+!reports/p2/
+!reports/p2/**
 
 # Keep script README docs (overrides global *.md ignore)
 !scripts/*.md

@@ -1,0 +1,44 @@
+{
+  "generated_at": "2026-05-25T18:51:10",
+  "device": {
+    "cuda": true,
+    "torch": "2.10.0+cu128",
+    "gpu": "Tesla T4",
+    "gpu_mem_gb": 15.64,
+    "python": "3.12.13",
+    "platform": "Linux-6.6.122+-x86_64-with-glibc2.35",
+    "cpu_count": 2,
+    "ram_gb": 13.29
+  },
+  "config": {
+    "seeds": [
+      42,
+      123,
+      456
+    ],
+    "multiseed_epochs": 30,
+    "val_conf": 0.001,
+    "val_iou": 0.7,
+    "n_qualitative": 5,
+    "subset_size": 1000
+  },
+  "seeds_completed": {
+    "baseline": [
+      42,
+      123,
+      456
+    ],
+    "kd": [
+      42,
+      123,
+      456
+    ]
+  },
+  "formats_validated": [
+    "pytorch_pt",
+    "onnx",
+    "trt_fp16",
+    "teacher_pt"
+  ],
+  "qualitative_cases": 5
+}
