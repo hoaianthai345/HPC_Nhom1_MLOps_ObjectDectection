@@ -1,0 +1,47 @@
+[
+  {
+    "index": 1,
+    "image": "image70_png_jpg.rf.4b11c07c3b77bd33e39809c3ec8fd708.jpg",
+    "recall": 0.0,
+    "n_gt": 4,
+    "missed": 4,
+    "fp": 0,
+    "render": "failure_1.png"
+  },
+  {
+    "index": 2,
+    "image": "image70_png_jpg.rf.94fc202b79b74aaf889f3eefaa322305.jpg",
+    "recall": 0.0,
+    "n_gt": 4,
+    "missed": 4,
+    "fp": 0,
+    "render": "failure_2.png"
+  },
+  {
+    "index": 3,
+    "image": "screenshot_17292_jpg.rf.5a9ded284d947899ae7c65cdd1960e84.jpg",
+    "recall": 0.0,
+    "n_gt": 2,
+    "missed": 2,
+    "fp": 0,
+    "render": "failure_3.png"
+  },
+  {
+    "index": 4,
+    "image": "image20_png_jpg.rf.04d6ab9b6ccc682720e28a17e4f38c79.jpg",
+    "recall": 0.21212121212121213,
+    "n_gt": 33,
+    "missed": 26,
+    "fp": 2,
+    "render": "failure_4.png"
+  },
+  {
+    "index": 5,
+    "image": "image30_png_jpg.rf.976f50f7e7afa1fd421fcc9aada8f7e2.jpg",
+    "recall": 0.23076923076923078,
+    "n_gt": 26,
+    "missed": 20,
+    "fp": 5,
+    "render": "failure_5.png"
+  }
+]

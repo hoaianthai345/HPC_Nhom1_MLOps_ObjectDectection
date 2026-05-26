@@ -1,0 +1,72 @@
+{
+  "baseline": {
+    "precision": 0.66428,
+    "recall": 0.6231,
+    "map50": 0.6571,
+    "map5095": 0.44376,
+    "train_time_s": 508.297,
+    "label": "baseline",
+    "tau": 3.0,
+    "box_w": 0.5,
+    "dense_w": 0.25,
+    "sparse_w": 0.25,
+    "obj_th": 0.3,
+    "checkpoint": "/content/ultralytics-kd/runs/detect/runs/ablation_baseline/kd_baseline/weights/best.pt"
+  },
+  "tau1": {
+    "precision": 0.68396,
+    "recall": 0.59698,
+    "map50": 0.64623,
+    "map5095": 0.43125,
+    "train_time_s": 507.636,
+    "label": "tau1",
+    "tau": 1.0,
+    "box_w": 0.5,
+    "dense_w": 0.25,
+    "sparse_w": 0.25,
+    "obj_th": 0.3,
+    "checkpoint": "/content/ultralytics-kd/runs/detect/runs/ablation_tau1/kd_tau1/weights/best.pt"
+  },
+  "tau5": {
+    "precision": 0.67724,
+    "recall": 0.59796,
+    "map50": 0.63227,
+    "map5095": 0.42012,
+    "train_time_s": 509.184,
+    "label": "tau5",
+    "tau": 5.0,
+    "box_w": 0.5,
+    "dense_w": 0.25,
+    "sparse_w": 0.25,
+    "obj_th": 0.3,
+    "checkpoint": "/content/ultralytics-kd/runs/detect/runs/ablation_tau5/kd_tau5/weights/best.pt"
+  },
+  "box_low": {
+    "precision": 0.71307,
+    "recall": 0.58699,
+    "map50": 0.65203,
+    "map5095": 0.4351,
+    "train_time_s": 508.403,
+    "label": "box_low",
+    "tau": 3.0,
+    "box_w": 0.25,
+    "dense_w": 0.25,
+    "sparse_w": 0.25,
+    "obj_th": 0.3,
+    "checkpoint": "/content/ultralytics-kd/runs/detect/runs/ablation_box_low/kd_box_low/weights/best.pt"
+  },
+  "box_high": {
+    "precision": 0.65362,
+    "recall": 0.62033,
+    "map50": 0.64061,
+    "map5095": 0.43002,
+    "train_time_s": 509.28,
+    "label": "box_high",
+    "tau": 3.0,
+    "box_w": 1.0,
+    "dense_w": 0.25,
+    "sparse_w": 0.25,
+    "obj_th": 0.3,
+    "checkpoint": "/content/ultralytics-kd/runs/detect/runs/ablation_box_high/kd_box_high/weights/best.pt"
+  }
+}

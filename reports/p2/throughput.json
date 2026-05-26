@@ -1,0 +1,37 @@
+{
+  "1": {
+    "batch_size": 1,
+    "total_s": 0.872,
+    "total_imgs": 50,
+    "ms_per_img": 17.433,
+    "throughput_fps": 57.4
+  },
+  "2": {
+    "batch_size": 2,
+    "total_s": 1.255,
+    "total_imgs": 100,
+    "ms_per_img": 12.554,
+    "throughput_fps": 79.7
+  },
+  "4": {
+    "batch_size": 4,
+    "total_s": 2.245,
+    "total_imgs": 200,
+    "ms_per_img": 11.227,
+    "throughput_fps": 89.1
+  },
+  "8": {
+    "batch_size": 8,
+    "total_s": 4.305,
+    "total_imgs": 400,
+    "ms_per_img": 10.762,
+    "throughput_fps": 92.9
+  },
+  "16": {
+    "batch_size": 16,
+    "total_s": 9.042,
+    "total_imgs": 800,
+    "ms_per_img": 11.302,
+    "throughput_fps": 88.5
+  }
+}

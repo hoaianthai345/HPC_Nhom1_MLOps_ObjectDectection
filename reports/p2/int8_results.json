@@ -1,0 +1,36 @@
+{
+  "onnx_fp32": {
+    "size_mb": 9.35,
+    "map50": 0.6268,
+    "map5095": 0.4242,
+    "precision": 0.6651,
+    "recall": 0.5934
+  },
+  "onnx_int8": {
+    "size_mb": 2.74,
+    "map50": 0.6201,
+    "map5095": 0.3972,
+    "precision": 0.6675,
+    "recall": 0.5797
+  },
+  "onnx_fp32_cpu": {
+    "inf_mean_ms": 71.753,
+    "inf_p95_ms": 84.36,
+    "fps": 13.9
+  },
+  "onnx_fp32_gpu": {
+    "inf_mean_ms": 5.928,
+    "inf_p95_ms": 8.351,
+    "fps": 168.7
+  },
+  "onnx_int8_cpu": {
+    "inf_mean_ms": 505.357,
+    "inf_p95_ms": 815.609,
+    "fps": 2.0
+  },
+  "onnx_int8_gpu": {
+    "inf_mean_ms": 500.255,
+    "inf_p95_ms": 809.559,
+    "fps": 2.0
+  }
+}
