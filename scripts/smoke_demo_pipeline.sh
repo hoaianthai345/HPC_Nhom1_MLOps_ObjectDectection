@@ -94,6 +94,32 @@ step 1 "Kiểm tra môi trường"
   >> "$LOG_FILE" 2>&1 && ok "ultralytics import OK" \
   || fail "Ultralytics chưa cài. Cài: "$PY" -m pip install ultralytics"
 
+# Tự cài deps data_pipeline (kaggle, kagglehub, opencv...) nếu thiếu
+if ! "$PY" -c "import kagglehub, kaggle" >> "$LOG_FILE" 2>&1; then
+  if [ -f "$REPO_ROOT/data_pipeline/requirements.txt" ]; then
+    log "Cài data_pipeline deps (kaggle, kagglehub, opencv-python, ...)..."
+    "$PY" -m pip install -q -r "$REPO_ROOT/data_pipeline/requirements.txt" \
+      >> "$LOG_FILE" 2>&1 || fail "Cài data_pipeline requirements lỗi"
+    ok "Đã cài data_pipeline deps"
+  else
+    fail "Thiếu kagglehub/kaggle nhưng không tìm thấy data_pipeline/requirements.txt"
+  fi
+else
+  ok "kaggle + kagglehub import OK"
+fi
+
+# Deps cho KD (training_pipeline/src/train.py) + ONNX export
+EXTRA_DEPS=""
+"$PY" -c "import mlflow" >> "$LOG_FILE" 2>&1 || EXTRA_DEPS="$EXTRA_DEPS mlflow"
+"$PY" -c "import onnx, onnxruntime, onnxslim" >> "$LOG_FILE" 2>&1 \
+  || EXTRA_DEPS="$EXTRA_DEPS onnx onnxruntime onnxslim"
+if [ -n "$EXTRA_DEPS" ]; then
+  log "Cài deps phụ trợ:$EXTRA_DEPS..."
+  "$PY" -m pip install -q $EXTRA_DEPS >> "$LOG_FILE" 2>&1 \
+    || fail "Cài $EXTRA_DEPS lỗi"
+  ok "Đã cài deps phụ trợ"
+fi
+
 if [ "$NO_TRAIN" -eq 0 ]; then
   KD_FORK="$REPO_ROOT/training_pipeline/src/ultralytics-kd"
   if [ ! -d "$KD_FORK" ]; then
@@ -246,14 +272,30 @@ assert 'ultralytics-kd' in os.path.realpath(inspect.getfile(ultralytics))" \
 
   cd "$REPO_ROOT"
   T0=$(time_ms)
+  # Sinh config YAML tạm với siêu tham số smoke (epochs/batch/imgsz/device từ flag)
+  SMOKE_CFG="$OUT_DIR/train_kd_smoke.yaml"
+  "$PY" - <<EOF >> "$LOG_FILE" 2>&1
+import yaml
+from pathlib import Path
+base = yaml.safe_load(Path("training_pipeline/src/config/train.yaml").read_text())
+base.setdefault("training", {}).update({
+    "epochs": $EPOCHS, "batch": $BATCH, "imgsz": $IMGSZ,
+    "device": "$DEVICE", "seed": 42,
+})
+base.setdefault("logging", {}).update({
+    "project": "$OUT_DIR/runs", "name": "kd_smoke",
+})
+Path("$SMOKE_CFG").write_text(yaml.safe_dump(base, sort_keys=False))
+EOF
+
   "$PY" training_pipeline/src/train.py \
-    training_pipeline/src/config/train.yaml \
+    "$SMOKE_CFG" \
     --teacher-weights "$TEACHER_BEST" \
     --student-weights "$STUDENT_MODEL" \
     --data "$DATA_YAML" \
-    --epochs "$EPOCHS" --batch "$BATCH" --imgsz "$IMGSZ" --device "$DEVICE" \
-    --project "$OUT_DIR/runs" --name kd_smoke \
-    --no-mlflow \
+    --mlflow-tracking-uri "file:$OUT_DIR/mlruns" \
+    --mlflow-experiment kd-smoke \
+    --mlflow-run-name "kd_smoke_$(date +%H%M%S)" \
     >> "$LOG_FILE" 2>&1 || log "⚠️  Train KD lỗi -- bỏ qua, dùng student baseline"
 
   CAND=$(find "$OUT_DIR/runs/kd_smoke" -name "best.pt" 2>/dev/null | head -1)
@@ -278,18 +320,19 @@ SERVING_ONNX="$ARTIFACT_DIR/serving_model.onnx"
 [ -f "$KD_BEST" ] && cp "$KD_BEST" "$SERVING_PT" || cp "$STUDENT_BEST" "$SERVING_PT"
 
 T0=$(time_ms)
+# Xoá ONNX cũ (nếu có từ session trước) để export sinh file mới chính xác
+rm -f "$SERVING_ONNX"
+# dynamic=True để ONNX accept input shape co giãn (tránh mismatch khi val/bench dùng imgsz khác)
 "$PY" -c "
 from ultralytics import YOLO
-YOLO('$SERVING_PT').export(format='onnx', imgsz=$IMGSZ, dynamic=False, simplify=True)
+YOLO('$SERVING_PT').export(format='onnx', imgsz=$IMGSZ, dynamic=True, simplify=True)
 " >> "$LOG_FILE" 2>&1 || log "⚠️  Export ONNX lỗi"
 
-# Move ONNX file vào artifact dir
-for cand in "${SERVING_PT%.pt}.onnx" "$REPO_ROOT/serving_model.onnx"; do
-  if [ -f "$cand" ] && [ "$cand" != "$SERVING_ONNX" ]; then
-    cp "$cand" "$SERVING_ONNX"
-    break
-  fi
-done
+# Ultralytics lưu ONNX cạnh file .pt — chỉ copy nếu vị trí khác SERVING_ONNX
+EXPORTED="${SERVING_PT%.pt}.onnx"
+if [ -f "$EXPORTED" ] && [ "$EXPORTED" != "$SERVING_ONNX" ]; then
+  cp "$EXPORTED" "$SERVING_ONNX"
+fi
 [ -f "$SERVING_ONNX" ] && ok "ONNX export xong sau $((($(time_ms)-$T0)/1000))s ($(du -h "$SERVING_ONNX" | cut -f1))" \
   || log "⚠️  Không tìm thấy serving_model.onnx sau export"
 
