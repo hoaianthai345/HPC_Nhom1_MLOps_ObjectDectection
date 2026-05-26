@@ -272,6 +272,27 @@ assert 'ultralytics-kd' in os.path.realpath(inspect.getfile(ultralytics))" \
 
   cd "$REPO_ROOT"
   T0=$(time_ms)
+  # Auto-detect MLflow server (port 5000 hoặc 5001); fallback về file store nếu không có
+  MLFLOW_URI="file:$OUT_DIR/mlruns"
+  for port in 5000 5001; do
+    if curl -sf -o /dev/null -w "%{http_code}" "http://localhost:$port" 2>/dev/null | grep -qE "^(200|302|403)$"; then
+      MLFLOW_URI="http://localhost:$port"
+      log "Phát hiện MLflow server tại $MLFLOW_URI — log run lên server thật"
+      # MLflow server chạy trong docker network reference MinIO qua hostname 'minio',
+      # client trên host phải thay bằng localhost:9000. Đọc credentials từ
+      # infra/mlflow/.env nếu có.
+      MLFLOW_ENV="$REPO_ROOT/infra/mlflow/.env"
+      if [ -f "$MLFLOW_ENV" ]; then
+        set -a; . "$MLFLOW_ENV"; set +a
+      fi
+      export MLFLOW_S3_ENDPOINT_URL="${MLFLOW_S3_ENDPOINT_URL:-http://localhost:9000}"
+      export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-minio_admin}"
+      export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-minio_password123}"
+      log "S3 endpoint: $MLFLOW_S3_ENDPOINT_URL"
+      break
+    fi
+  done
+
   # Sinh config YAML tạm với siêu tham số smoke (epochs/batch/imgsz/device từ flag)
   SMOKE_CFG="$OUT_DIR/train_kd_smoke.yaml"
   "$PY" - <<EOF >> "$LOG_FILE" 2>&1
@@ -293,7 +314,7 @@ EOF
     --teacher-weights "$TEACHER_BEST" \
     --student-weights "$STUDENT_MODEL" \
     --data "$DATA_YAML" \
-    --mlflow-tracking-uri "file:$OUT_DIR/mlruns" \
+    --mlflow-tracking-uri "$MLFLOW_URI" \
     --mlflow-experiment kd-smoke \
     --mlflow-run-name "kd_smoke_$(date +%H%M%S)" \
     >> "$LOG_FILE" 2>&1 || log "⚠️  Train KD lỗi -- bỏ qua, dùng student baseline"

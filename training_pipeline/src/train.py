@@ -4,10 +4,13 @@ import os
 from ultralytics import YOLO  # type: ignore
 from pathlib import Path
 
-os.environ['AWS_ACCESS_KEY_ID'] = 'minio_admin'
-os.environ['AWS_SECRET_ACCESS_KEY'] = 'minio_password123'
-os.environ['MLFLOW_S3_ENDPOINT_URL'] = 'http://minio:9000'
-os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+# Default values khi chạy trong docker network. Khi chạy từ host (CLI/smoke),
+# người gọi cần override MLFLOW_S3_ENDPOINT_URL=http://localhost:9000 trước khi
+# import script này.
+os.environ.setdefault('AWS_ACCESS_KEY_ID', 'minio_admin')
+os.environ.setdefault('AWS_SECRET_ACCESS_KEY', 'minio_password123')
+os.environ.setdefault('MLFLOW_S3_ENDPOINT_URL', 'http://minio:9000')
+os.environ.setdefault('AWS_DEFAULT_REGION', 'us-east-1')
 
 try:
     import mlflow  
