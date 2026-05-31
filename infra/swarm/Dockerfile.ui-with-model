@@ -1,0 +1,2 @@
+FROM localhost:5000/serving-ui:v1
+COPY serving_model.pt /app/serving_model.pt

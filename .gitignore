@@ -241,7 +241,9 @@ serving_pipeline/production-data/
 runs/
 .vscode/
 
-outputs/
+outputs/*
+!outputs/final_report.pdf
+!outputs/HPC_MLOps_Project_Presentation.pptx
 
 # Python venv (local development)
 .venv*/
@@ -264,3 +266,5 @@ mlruns/
 # Keep script README docs (overrides global *.md ignore)
 !scripts/*.md
 !scripts/**/*.md
+training_pipeline/src/ultralytics-kd/
+.understand-anything/

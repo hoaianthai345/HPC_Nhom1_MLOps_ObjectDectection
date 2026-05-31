@@ -1,0 +1,66 @@
+# Prometheus config cho Docker Swarm deploy
+#
+# Khác với prometheus.yml ở compose mode:
+#   - Dùng dns_sd_configs với "tasks.<service>" để scrape mọi replica qua swarm DNS round-robin
+#   - Mỗi replica api được scrape độc lập, không cần host.docker.internal
+#   - Service swarm tự update khi scale: thêm replica → Prometheus tự nhận target mới
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: mlops-swarm
+    env: local
+
+alerting:
+  alertmanagers:
+    - dns_sd_configs:
+        - names: [tasks.alertmanager]
+          type: A
+          port: 9093
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: serving_api
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names: [tasks.api]      # swarm DNS: trả về tất cả task IP của service mlops_api
+        type: A
+        port: 8000
+    relabel_configs:
+      - source_labels: [__meta_dns_name]
+        target_label: swarm_service
+      - source_labels: [__address__]
+        target_label: replica_addr
+
+  - job_name: node_exporter
+    dns_sd_configs:
+      - names: [tasks.node_exporter]
+        type: A
+        port: 9100
+
+  - job_name: pushgateway
+    honor_labels: true
+    dns_sd_configs:
+      - names: [tasks.pushgateway]
+        type: A
+        port: 9091
+
+  - job_name: loki
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names: [tasks.loki]
+        type: A
+        port: 3100
+
+  - job_name: alertmanager
+    dns_sd_configs:
+      - names: [tasks.alertmanager]
+        type: A
+        port: 9093

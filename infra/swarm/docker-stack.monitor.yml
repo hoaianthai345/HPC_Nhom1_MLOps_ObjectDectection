@@ -1,0 +1,141 @@
+# Docker Swarm stack — Monitoring (Prometheus + Grafana + Alertmanager + Loki + node_exporter + pushgateway)
+#
+# Deploy:    docker stack deploy -c infra/swarm/docker-stack.monitor.yml mlops
+# Verify:    docker stack services mlops
+# Logs:      docker service logs mlops_prometheus -f
+# Remove:    docker stack rm mlops
+
+version: "3.9"
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    networks:
+      - mlops-overlay
+    ports:
+      - target: 9090
+        published: 9090
+        mode: ingress
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus-swarm.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+        delay: 5s
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+
+  grafana:
+    image: grafana/grafana:10.0.0
+    networks:
+      - mlops-overlay
+    ports:
+      - target: 3000
+        published: 3000
+        mode: ingress
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../monitor/grafana/provisioning:/etc/grafana/provisioning:ro
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+        delay: 5s
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    networks:
+      - mlops-overlay
+    ports:
+      - target: 9093
+        published: 9093
+        mode: ingress
+    volumes:
+      - alertmanager_data:/alertmanager
+      - ../monitor/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+
+  loki:
+    image: grafana/loki:2.9.0
+    networks:
+      - mlops-overlay
+    ports:
+      - target: 3100
+        published: 3100
+        mode: ingress
+    volumes:
+      - loki_data:/loki
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+
+  pushgateway:
+    image: prom/pushgateway:v1.7.0
+    networks:
+      - mlops-overlay
+    ports:
+      - target: 9091
+        published: 9091
+        mode: ingress
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+
+  node_exporter:
+    image: prom/node-exporter:v1.7.0
+    networks:
+      - mlops-overlay
+    ports:
+      - target: 9100
+        published: 9100
+        mode: ingress
+    command:
+      - "--path.rootfs=/host"
+    volumes:
+      - /:/host:ro,rslave
+    deploy:
+      mode: global              # 1 instance trên MỖI node — chuẩn pattern Prometheus node exporter
+      restart_policy:
+        condition: any
+        delay: 5s
+
+networks:
+  mlops-overlay:
+    external: true
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:
+  loki_data:

@@ -1,0 +1,4 @@
+# Image extends serving-api:v1 và bake serving_model.pt vào để swarm worker
+# không cần volume mount model (overlay không hỗ trợ bind mount host arbitrary).
+FROM localhost:5000/serving-api:v1
+COPY serving_model.pt /app/serving_model.pt

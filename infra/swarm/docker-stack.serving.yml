@@ -1,0 +1,106 @@
+# Docker Swarm stack — Serving (FastAPI + Gradio UI)
+#
+# Deploy:    docker stack deploy -c infra/swarm/docker-stack.serving.yml mlops
+# Verify:    docker stack services mlops
+# Scale:     docker service scale mlops_api=5
+# Update:    docker service update --image localhost:5000/serving-api:v2 mlops_api
+# Rollback:  docker service rollback mlops_api
+# Remove:    docker stack rm mlops
+#
+# Phải push image trước:
+#   docker tag serving_pipeline-api localhost:5000/serving-api:v1
+#   docker push localhost:5000/serving-api:v1
+#   docker tag serving_pipeline-ui  localhost:5000/serving-ui:v1
+#   docker push localhost:5000/serving-ui:v1
+
+version: "3.9"
+
+services:
+  api:
+    image: localhost:5000/serving-api:v1
+    networks:
+      - mlops-overlay
+    ports:
+      - target: 8000
+        published: 8000
+        mode: ingress
+    environment:
+      DEBUG: "false"
+      HOST: 0.0.0.0
+      API_PORT: 8000
+      YOLO_MODEL_PATH: /app/serving_model.pt
+      YOLO_CONFIDENCE_THRESHOLD: "0.25"
+      YOLO_IOU_THRESHOLD: "0.45"
+      YOLO_MAX_DETECTIONS: "100"
+      DEVICE: cpu
+      USE_MINIO: "false"
+      PRODUCTION_DIR: /data/production
+      ENABLE_DRIFT_API: "true"
+    volumes:
+      - production_data:/data/production
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 60s
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3G
+        reservations:
+          cpus: "0.5"
+          memory: 1G
+      labels:
+        com.mlops.role: "serving-api"
+        com.mlops.version: "v1"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  ui:
+    image: localhost:5000/serving-ui:v1
+    networks:
+      - mlops-overlay
+    ports:
+      - target: 7860
+        published: 7860
+        mode: ingress
+    environment:
+      API_HOST: api
+      API_PORT: 8000
+      GRADIO_PORT: 7860
+      YOLO_MODEL_PATH: /app/serving_model.pt
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+      labels:
+        com.mlops.role: "serving-ui"
+
+networks:
+  mlops-overlay:
+    external: true
+
+volumes:
+  production_data:
+    driver: local
