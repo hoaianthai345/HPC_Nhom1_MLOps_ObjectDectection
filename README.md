@@ -129,59 +129,98 @@ notebooks/colab_train.ipynb
 
 ## Cài Đặt Nhanh
 
-### 1. Clone repository
+### 1. Clone repository và tạo venv
 
 ```bash
 git clone https://github.com/hoaianthai345/HPC_Nhom1_MLOps_ObjectDectection.git
 cd HPC_Nhom1_MLOps_ObjectDectection
-```
 
-### 2. Tạo Python environment
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv-demo
+source .venv-demo/bin/activate
 pip install --upgrade pip
 pip install -r data_pipeline/requirements.txt
 pip install -r serving_pipeline/requirements.txt
-pip install ultralytics mlflow pyyaml boto3
+pip install ultralytics mlflow pyyaml boto3 deepchecks[vision]
 ```
 
-### 3. Tạo Docker network
+### 2. Đặt credentials
 
 ```bash
-docker network create hpc-nhom1-network
+# Kaggle API token (cần để tải dataset)
+cp ~/Downloads/kaggle.json secrets/
+chmod 600 secrets/kaggle.json
 ```
 
-Nếu network đã tồn tại thì có thể bỏ qua.
+`secrets/` đã được gitignore, không bao giờ commit lên GitHub. Xem `secrets/README.md` cho chi tiết.
 
-### 4. Khởi động MLflow và MinIO
+### 3. Khởi động toàn bộ stack bằng 1 lệnh
 
 ```bash
-cd infra/mlflow
-cp .env.example .env
-docker compose up -d
-cd ../..
+bash scripts/start_full_local.sh
 ```
 
-Truy cập:
+Script này lần lượt tạo Docker network `hpc-nhom1-network`, bật MLflow + MinIO + MySQL, monitoring stack (Prometheus + Grafana + Loki + Alertmanager), Airflow (CeleryExecutor) và serving (FastAPI + Gradio). Mỗi service được healthcheck trước khi chuyển sang service kế.
 
-- MLflow: http://localhost:5000
-- MinIO: http://localhost:9001
+| Dịch vụ | URL | Tài khoản |
+|---|---|---|
+| FastAPI Swagger | http://localhost:8000/docs | — |
+| Gradio UI | http://localhost:7860 | — |
+| MLflow Tracking | http://localhost:5001 | — |
+| MinIO Console | http://localhost:9001 | `minio_admin` / `minio_password123` |
+| Prometheus | http://localhost:9090 | — |
+| Grafana | http://localhost:3000 | `admin` / `admin` |
+| Alertmanager | http://localhost:9093 | — |
+| Airflow Web UI | http://localhost:8080 | `airflow` / `airflow` |
 
-### 5. Khởi động monitoring stack
+Để dừng toàn bộ: `bash scripts/stop_full_local.sh`
+
+## Hướng Dẫn Chạy Lại (Bản Final)
+
+### Smoke test end-to-end (~10-15 phút trên CPU)
 
 ```bash
-cd infra/monitor
-docker compose up -d
-cd ../..
+bash scripts/smoke_demo_pipeline.sh
 ```
 
-Truy cập:
+Chạy đủ luồng huấn luyện-export-benchmark ở cấu hình tối giản (subset 50 ảnh, 1 epoch, imgsz 320). Mục đích là verify pipeline còn hoạt động, không phải training thật. Kết quả ở `reports/smoke_demo/`.
 
-- Prometheus: http://localhost:9090
-- Grafana: http://localhost:3000
-- Loki: http://localhost:3100
+Các flag chính:
+
+```bash
+bash scripts/smoke_demo_pipeline.sh --no-train          # bỏ train, dùng checkpoint sẵn có
+bash scripts/smoke_demo_pipeline.sh --subset 200 --epochs 10 --imgsz 416   # train kỹ hơn
+bash scripts/smoke_demo_pipeline.sh --with-serving      # bật serving + test /detect
+```
+
+### Bơm traffic để Grafana có data
+
+```bash
+bash scripts/demo_warmup.sh -n 100 -i 0.3 --background
+```
+
+Bắn $N$ request vào `/detect` để Prometheus scrape có chuỗi thời gian, Grafana dashboard hiện đủ panel khi demo. Mặc định 60 request × 1s. Mở Grafana tại http://localhost:3000/d/mlops-overview với time range "Last 15 minutes" để thấy 13 panel có dữ liệu.
+
+### Long evidence run (~8 giờ, sinh minh chứng cho báo cáo)
+
+```bash
+bash scripts/long_demo_evidence.sh                    # 8h mặc định
+bash scripts/long_demo_evidence.sh --hours 4          # tuỳ chỉnh
+bash scripts/long_demo_evidence.sh --skip-train       # bỏ train, chỉ chạy vòng evidence
+```
+
+Sau training pipeline, script vào vòng lặp: snapshot Prometheus/MLflow/MinIO/container health mỗi 5 phút, bơm 30 request mỗi 15 phút và gọi `/drift/data` mỗi 60 phút. Cuối cùng tự sinh `EVIDENCE_SUMMARY.md` + `timeline.csv` ở `reports/long_run_evidence/<timestamp>/`.
+
+### Docker Swarm orchestration (Mục 3.8 báo cáo)
+
+```bash
+bash scripts/start_swarm_stack.sh        # init swarm + registry + build + deploy
+bash scripts/verify_swarm_features.sh    # kiểm thử 4 tính năng vận hành
+bash scripts/stop_swarm_stack.sh         # gỡ stack
+```
+
+Sau khi deploy, `mlops_api` chạy với 3 replica và rolling update `start-first`. Script verify đo bốn tính năng và lưu evidence ở `reports/swarm_evidence/<timestamp>/`: load balance qua VIP, downtime trong rolling update, thời gian self-heal sau force-kill, và Prometheus auto-discovery khi scale. Cấu hình chi tiết trong `infra/swarm/README.md`.
+
+Lưu ý: stack swarm chiếm port 8000/7860/9090/3000 trùng compose, phải `stop_full_local.sh` (cho serving + monitor) trước khi `start_swarm_stack.sh`. MLflow + Airflow giữ ở compose vì có MySQL/Postgres stateful.
 
 ## Training Bằng Google Colab
 
@@ -264,56 +303,42 @@ python training_pipeline/src/train.py \
 
 Lưu ý: KD cần bản `ultralytics-kd` đã được patch bằng `notebooks/trainer.py`.
 
-## Chạy Serving Demo
+## Chạy Serving Demo (chỉ stack serving)
 
-Copy model đã train vào repo:
-
-```bash
-cp /path/to/serving_model.pt ./serving_model.pt
-```
-
-Chạy API và UI:
+Khi không cần đầy đủ MLflow + monitor + Airflow, có thể chỉ chạy serving:
 
 ```bash
-cd serving_pipeline
-docker compose up -d api ui
+# Copy model đã train (hoặc dùng demo model có sẵn)
+bash scripts/prepare_demo_model.sh "/path/to/model.pt"
+
+# CPU
+cd serving_pipeline && docker compose up -d api ui
+
+# GPU + TensorRT
+cd serving_pipeline && docker compose --profile gpu up -d
 ```
 
-Truy cập:
+Truy cập FastAPI tại http://localhost:8000/docs và Gradio tại http://localhost:7860. Drift endpoint `/drift/data` đã tích hợp Deepchecks (xem Mục 3.7 báo cáo).
 
-- FastAPI docs: http://localhost:8000/docs
-- Gradio UI: http://localhost:7860
+## Bộ Script Tham Khảo
 
-Nếu chạy GPU/TensorRT:
-
-```bash
-cd serving_pipeline
-docker compose --profile gpu up -d
-```
+| Script | Mục đích | Thời lượng |
+|---|---|---|
+| `start_full_local.sh` | Khởi động toàn bộ stack (MLflow + Monitor + Airflow + Serving) | ~2 phút |
+| `stop_full_local.sh` | Dừng toàn bộ stack | <30s |
+| `smoke_demo_pipeline.sh` | Smoke test E2E train → export → serve → benchmark | 10-15 phút |
+| `demo_warmup.sh` | Bơm traffic vào FastAPI để Grafana có data | tuỳ N |
+| `long_demo_evidence.sh` | Chạy 8h evidence loop (snapshot + drift) cho minh chứng báo cáo | 4-8h |
+| `start_swarm_stack.sh` | Init swarm + registry + deploy serving/monitor stack | ~5 phút |
+| `verify_swarm_features.sh` | Kiểm thử 4 tính năng Swarm (load balance, rolling, self-heal, scale) | ~3 phút |
+| `stop_swarm_stack.sh` | Gỡ swarm stack | <30s |
 
 ## Tài Liệu Cho Dev
 
-Khi bàn giao cho thành viên khác, ưu tiên theo thứ tự sau:
-
-- [docs/dev_build_matrix.md](docs/dev_build_matrix.md): hướng dẫn build và demo theo từng loại máy.
-- [docs/team_improvement_guide.md](docs/team_improvement_guide.md): phân công và các hạng mục cải tiến cho team.
-- `scripts/prepare_demo_model.sh`: chuẩn hóa file model về `serving_model.pt`.
-- `scripts/run_local_demo.sh`: dựng local demo FastAPI + Gradio.
-- `scripts/stop_local_demo.sh`: dừng local demo.
-- `scripts/package_project_artifacts.sh`: đóng gói repo và artifact để bàn giao.
-
-Chạy local nhanh nhất:
-
-```bash
-bash scripts/prepare_demo_model.sh "/path/to/model.pt"
-bash scripts/run_local_demo.sh
-```
-
-Đóng gói cho người khác:
-
-```bash
-bash scripts/package_project_artifacts.sh
-```
+- [docs/dev_build_matrix.md](docs/dev_build_matrix.md): hướng dẫn build theo từng loại máy.
+- [docs/team_improvement_guide.md](docs/team_improvement_guide.md): phân công và hạng mục cải tiến.
+- [infra/swarm/README.md](infra/swarm/README.md): chi tiết Docker Swarm deployment.
+- [secrets/README.md](secrets/README.md): hướng dẫn đặt `kaggle.json` và quy tắc bảo mật.
 
 ## API Chính
 
